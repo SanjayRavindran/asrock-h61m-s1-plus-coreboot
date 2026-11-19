@@ -22,5 +22,21 @@ DefinitionBlock(
 	{
 		#include <northbridge/intel/sandybridge/acpi/sandybridge.asl>
 		#include <southbridge/intel/bd82x6x/acpi/pch.asl>
+
+		/* Wake-on-LAN / PCIe WAKE# -> GPE0 bit 9 (PCI_EXP), deepest state S4 */
+		Scope (PEGP)
+		{
+			Name (_PRW, Package () { 0x09, 4 })
+		}
+
+		Scope (RP01)
+		{
+			Name (_PRW, Package () { 0x09, 4 })
+		}
+
+		Scope (RP04)
+		{
+			Name (_PRW, Package () { 0x09, 4 })
+		}
 	}
 }

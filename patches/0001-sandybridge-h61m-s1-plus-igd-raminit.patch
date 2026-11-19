@@ -1,5 +1,5 @@
 diff --git a/src/northbridge/intel/sandybridge/early_init.c b/src/northbridge/intel/sandybridge/early_init.c
-index 1d8a1e8b..92aa1618 100644
+index 1d8a1e8b..a8b1e5ad 100644
 --- a/src/northbridge/intel/sandybridge/early_init.c
 +++ b/src/northbridge/intel/sandybridge/early_init.c
 @@ -8,6 +8,8 @@
@@ -11,7 +11,26 @@ index 1d8a1e8b..92aa1618 100644
  #include "sandybridge.h"
  
  static void systemagent_vtd_init(void)
-@@ -180,8 +182,32 @@ void systemagent_early_init(void)
+@@ -131,6 +133,18 @@ static void start_peg_link_training(void)
+ 		return;
+ 
+ 	deven = pci_read_config32(HOST_BRIDGE, DEVEN);
++	const unsigned int peg_mode = get_uint_option("peg_bifurcation", 0);
++	u32 deven_mask = 0;
++
++	if (peg_mode < 1)
++		deven_mask |= DEVEN_PEG11;
++	if (peg_mode < 2)
++		deven_mask |= DEVEN_PEG12;
++	if (deven & deven_mask) {
++		deven &= ~deven_mask;
++		pci_write_config32(HOST_BRIDGE, DEVEN, deven);
++	}
++	printk(BIOS_INFO, "PEG: mode=%u DEVEN=0x%08x\n", peg_mode, deven);
+ 
+ 	/*
+ 	 * For each PEG device, set bit 5 to use three retries for OC (Offset Calibration).
+@@ -180,8 +194,32 @@ void systemagent_early_init(void)
  	systemagent_vtd_init();
  
  	/* Device Enable, don't touch PEG bits */
@@ -44,6 +63,68 @@ index 1d8a1e8b..92aa1618 100644
  	sandybridge_setup_graphics();
  
  	/*
+diff --git a/src/northbridge/intel/sandybridge/gma.c b/src/northbridge/intel/sandybridge/gma.c
+index 2304a046..c316535f 100644
+--- a/src/northbridge/intel/sandybridge/gma.c
++++ b/src/northbridge/intel/sandybridge/gma.c
+@@ -640,8 +640,23 @@ static void gma_func0_disable(struct device *dev)
+ 	dev->enabled = 0;
+ }
+ 
++/*
++ * Ramstage on Sandy/Ivy Bridge is 32-bit; keep IGD MMIO BARs below 4 GiB
++ * even when CONFIG_ALWAYS_ALLOW_ABOVE_4G_ALLOCATION is enabled for add-in cards.
++ */
++static void gma_read_resources(struct device *dev)
++{
++	struct resource *res;
++
++	pci_dev_read_resources(dev);
++	for (res = dev->resource_list; res; res = res->next) {
++		if ((res->flags & IORESOURCE_MEM) && res->limit > 0xffffffffULL)
++			res->limit = 0xffffffffULL;
++	}
++}
++
+ struct device_operations sandybridge_gma_func0_ops = {
+-	.read_resources         = pci_dev_read_resources,
++	.read_resources         = gma_read_resources,
+ 	.set_resources          = pci_dev_set_resources,
+ 	.enable_resources       = pci_dev_enable_resources,
+ 	.acpi_fill_ssdt		= gma_generate_ssdt,
+diff --git a/src/northbridge/intel/sandybridge/northbridge.c b/src/northbridge/intel/sandybridge/northbridge.c
+index 0d691d93..e3b29c30 100644
+--- a/src/northbridge/intel/sandybridge/northbridge.c
++++ b/src/northbridge/intel/sandybridge/northbridge.c
+@@ -7,6 +7,7 @@
+ #include <commonlib/helpers.h>
+ #include <device/pci_ops.h>
+ #include <delay.h>
++#include <option.h>
+ #include <cpu/intel/model_206ax/model_206ax.h>
+ #include <cpu/x86/msr.h>
+ #include <device/device.h>
+@@ -277,16 +278,18 @@ static void disable_peg(void)
+ 	struct device *dev;
+ 	u32 reg;
+ 
++	const unsigned int peg_mode = get_uint_option("peg_bifurcation", 0);
++
+ 	dev = pcidev_on_root(0, 0);
+ 	reg = pci_read_config32(dev, DEVEN);
+ 
+ 	dev = pcidev_on_root(1, 2);
+-	if (!dev_is_active_bridge(dev)) {
++	if (!dev_is_active_bridge(dev) || peg_mode < 2) {
+ 		printk(BIOS_DEBUG, "Disabling PEG12.\n");
+ 		reg &= ~DEVEN_PEG12;
+ 	}
+ 	dev = pcidev_on_root(1, 1);
+-	if (!dev_is_active_bridge(dev)) {
++	if (!dev_is_active_bridge(dev) || peg_mode < 1) {
+ 		printk(BIOS_DEBUG, "Disabling PEG11.\n");
+ 		reg &= ~DEVEN_PEG11;
+ 	}
 diff --git a/src/northbridge/intel/sandybridge/raminit.c b/src/northbridge/intel/sandybridge/raminit.c
 index b024c399..0d9f9020 100644
 --- a/src/northbridge/intel/sandybridge/raminit.c
@@ -116,3 +197,78 @@ index 282058b0..f3e3e1f8 100644
  	/* Actually, config of MCH or Host Bridge */
  	cfg = config_of_soc();
  
+diff --git a/src/southbridge/intel/bd82x6x/azalia.c b/src/southbridge/intel/bd82x6x/azalia.c
+index 4eeb3b5c..ffab9a63 100644
+--- a/src/southbridge/intel/bd82x6x/azalia.c
++++ b/src/southbridge/intel/bd82x6x/azalia.c
+@@ -123,8 +123,19 @@ static const char *azalia_acpi_name(const struct device *dev)
+ 	return "HDEF";
+ }
+ 
++static void azalia_read_resources(struct device *dev)
++{
++	struct resource *res;
++
++	pci_dev_read_resources(dev);
++	for (res = dev->resource_list; res; res = res->next) {
++		if ((res->flags & IORESOURCE_MEM) && res->limit > 0xffffffffULL)
++			res->limit = 0xffffffffULL;
++	}
++}
++
+ struct device_operations bd82x6x_azalia_ops = {
+-	.read_resources		= pci_dev_read_resources,
++	.read_resources		= azalia_read_resources,
+ 	.set_resources		= pci_dev_set_resources,
+ 	.enable_resources	= pci_dev_enable_resources,
+ 	.init			= azalia_init,
+diff --git a/src/southbridge/intel/bd82x6x/me.c b/src/southbridge/intel/bd82x6x/me.c
+index 1682c7d3..d9353dd7 100644
+--- a/src/southbridge/intel/bd82x6x/me.c
++++ b/src/southbridge/intel/bd82x6x/me.c
+@@ -455,8 +455,19 @@ static void intel_me_init(struct device *dev)
+ 	}
+ }
+ 
++static void me_read_resources(struct device *dev)
++{
++	struct resource *res;
++
++	pci_dev_read_resources(dev);
++	for (res = dev->resource_list; res; res = res->next) {
++		if ((res->flags & IORESOURCE_MEM) && res->limit > 0xffffffffULL)
++			res->limit = 0xffffffffULL;
++	}
++}
++
+ static struct device_operations device_ops = {
+-	.read_resources		= pci_dev_read_resources,
++	.read_resources		= me_read_resources,
+ 	.set_resources		= pci_dev_set_resources,
+ 	.enable_resources	= pci_dev_enable_resources,
+ 	.init			= intel_me_init,
+diff --git a/src/southbridge/intel/bd82x6x/smbus.c b/src/southbridge/intel/bd82x6x/smbus.c
+index 9db8d7a9..dc37751d 100644
+--- a/src/southbridge/intel/bd82x6x/smbus.c
++++ b/src/southbridge/intel/bd82x6x/smbus.c
+@@ -27,8 +27,19 @@ static const char *smbus_acpi_name(const struct device *dev)
+ 	return "SBUS";
+ }
+ 
++static void pch_smbus_read_resources(struct device *dev)
++{
++	struct resource *res;
++
++	smbus_read_resources(dev);
++	for (res = dev->resource_list; res; res = res->next) {
++		if ((res->flags & IORESOURCE_MEM) && res->limit > 0xffffffffULL)
++			res->limit = 0xffffffffULL;
++	}
++}
++
+ struct device_operations bd82x6x_smbus_ops = {
+-	.read_resources		= smbus_read_resources,
++	.read_resources		= pch_smbus_read_resources,
+ 	.set_resources		= pci_dev_set_resources,
+ 	.enable_resources	= pci_dev_enable_resources,
+ 	.scan_bus		= scan_smbus,

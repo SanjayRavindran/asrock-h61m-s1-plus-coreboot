@@ -15,12 +15,8 @@
 
 /*
  * LPT1 at 0x378, SPP/bi-directional mode (CR F0 bits 2:0 = 000, FIFO
- * threshold bits 6:3 = 0111 -> 0x38).  The stock BIOS used 0x3b (ECP+EPP
- * 1.9); in the ECP/EPP modes the data register can be redirected to the
- * FIFO and the data lines tri-stated, which made the POST output on the
- * DB25 unreliable.  SPP always drives DATA0-7 from the data register.
- *
- * The caller must be in Super I/O configuration mode.
+ * threshold bits 6:3 = 0111 -> 0x38).  SPP always drives DATA0-7 from the
+ * data register so POST output on DB25 is deterministic.
  */
 static void lpt_setup(void)
 {
@@ -48,36 +44,33 @@ static void sio_pinmux_setup(void)
 	pnp_write_config(SIO_BASE, 0x2f, 0x03);
 }
 
-void bootblock_mainboard_early_init(void)
+static void sio_pled_steady_on(void)
 {
-	/*
-	 * Configure NCT6776F/D global pin-muxing, LPT1 (0x378), GPIO1 (PLED- steady on),
-	 * ACPI, and HWM registers from the verified live hardware dump
-	 * before bringing up COM1.
-	 */
-	nuvoton_pnp_enter_conf_state(SIO_BASE);
-
-	sio_pinmux_setup();
-
-	/* LDN 0x01: Enable LPT1 early for POST code output */
-	lpt_setup();
-
-	/* LDN 0x08: Drive GP10 (PLED-) output low and clear S3 blink mode */
+	/* LDN 0x08: Mux GP10 to GRN_LED and ensure WDT1 is disabled */
 	pnp_set_logical_device(GPIO1_DEV);
 	pnp_write_config(GPIO1_DEV, 0xf0, 0xd8);
 	pnp_write_config(GPIO1_DEV, 0xf1, 0x1e);
 	pnp_write_config(GPIO1_DEV, 0xf4, 0x01);
 	pnp_write_config(GPIO1_DEV, 0xf5, 0x00);
 
+	/* LDN 0x0b: Steady active-low PLED- on GRN_LED (0x07), YLW off */
+	pnp_set_logical_device(HWM_DEV);
+	pnp_write_config(HWM_DEV, 0xf7, 0x07);
+	pnp_write_config(HWM_DEV, 0xf8, 0x00);
+}
+
+void bootblock_mainboard_early_init(void)
+{
+	nuvoton_pnp_enter_conf_state(SIO_BASE);
+
+	sio_pinmux_setup();
+	lpt_setup();
+	sio_pled_steady_on();
+
 	/* LDN 0x0a: ACPI routing/power-loss defaults */
 	pnp_set_logical_device(ACPI_DEV);
 	pnp_write_config(ACPI_DEV, 0xe6, 0x4c);
 	pnp_write_config(ACPI_DEV, 0xf0, 0x40);
-
-	/* LDN 0x0b: HWM extra control */
-	pnp_set_logical_device(HWM_DEV);
-	pnp_write_config(HWM_DEV, 0xf7, 0x07);
-	pnp_write_config(HWM_DEV, 0xf8, 0x00);
 
 	nuvoton_pnp_exit_conf_state(SIO_BASE);
 
@@ -87,16 +80,15 @@ void bootblock_mainboard_early_init(void)
 
 #if defined(__ROMSTAGE__)
 /*
- * The Super I/O logical devices are reset by LRESET#/PLTRST#.  romstage can
- * be entered after such a reset (CF9 reset after ME/raminit handshakes), so
- * re-assert the LPT1 and COM1 setup here so POST codes and the console keep
- * working through the rest of romstage, postcar and ramstage.
+ * Super I/O logical devices are reset by LRESET#/PLTRST# (including after CF9
+ * or S3 resume), so re-assert pin-muxing, LPT1, and steady PLED- here.
  */
 void mainboard_early_init(bool s3resume)
 {
 	nuvoton_pnp_enter_conf_state(SIO_BASE);
 	sio_pinmux_setup();
 	lpt_setup();
+	sio_pled_steady_on();
 	nuvoton_pnp_exit_conf_state(SIO_BASE);
 }
 #endif

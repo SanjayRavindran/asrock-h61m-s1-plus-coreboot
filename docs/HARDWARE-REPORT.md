@@ -4,62 +4,37 @@
 
 This document records the Coreboot + EDK2 `UefiPayloadPkg` port, build artifacts, hardware bring-up logs, peripheral/VRM/microcode audits, Linux OS configuration, and public GitHub release setup for the **ASRock H61M-S1 PLUS** motherboard (`H61M-VS4 G/A 1.00` / `R1.01` boardview, Xeon E3-1275 v2, H61 `8086:1c5c`, NCT6776F/D Super I/O, ALC662, Realtek RTL8111, NVIDIA Tesla P4 in `PCIE1`).
 
-- **Public GitHub Repository**: [SanjayRavindran/asrock-h61m-s1-plus-coreboot](https://github.com/SanjayRavindran/asrock-h61m-s1-plus-coreboot) (Release `v26.11` + automated quarterly Coreboot release workflow)
+- **Public GitHub Repository**: [SanjayRavindran/asrock-h61m-s1-plus-coreboot](https://github.com/SanjayRavindran/asrock-h61m-s1-plus-coreboot) (`v26.11.1` latest + `v26.11` initial + automated quarterly release workflow)
 - **Build Host**: Ubuntu 26.04 Coreboot build host (`~/coreboot-work/h61m-s1-plus`, branch `h61m-s1-plus-port`, pinned Coreboot commit `df45ea2c49b4c7f6a1d2a969934cf6c6a2cb9018`)
-- **Payload**: EDK2 `UefiPayloadPkg` (`https://github.com/mrchromebox/edk2`, commit `f248a68be339831b69a880d9c932a6a3cf3c461a`, `CONFIG_EDK2_RELEASE=y` + `CONFIG_EDK2_BOOT_MANAGER_ESCAPE=y`)
-- **Authoritative Evidence & Captures**:
-  - Boardview: [`H61M-S1+/ASROCK H61M-S1 PLUS R1.01 70-MXGU40-A01 (BOARDVIEW).fz`](H61M-S1+/ASROCK%20H61M-S1%20PLUS%20R1.01%2070-MXGU40-A01%20(BOARDVIEW).fz)
-  - Pre-flash porting dossier & register dumps: [`H61M-S1+/bios_porting_documentation.md`](H61M-S1+/bios_porting_documentation.md), [`inputs/nct6776-dump.txt`](inputs/nct6776-dump.txt)
-  - v1 4 MiB hardware boot log: [`logs/coreboot-bootlog-clean.txt`](logs/coreboot-bootlog-clean.txt)
-  - v2 8 MiB end-to-end reboot capture (`115200 8N1`): [`logs/coreboot-v2-full-bootlog.txt`](logs/coreboot-v2-full-bootlog.txt)
-  - Post-reboot full peripheral & SPD review: [`logs/peripheral-review-v2.txt`](logs/peripheral-review-v2.txt)
-  - Earlier v2 diagnostics: [`logs/serial-diag-v2.txt`](logs/serial-diag-v2.txt), [`logs/serial-diag-v2-plat.txt`](logs/serial-diag-v2-plat.txt), [`logs/serial-post-config-v2.txt`](logs/serial-post-config-v2.txt), [`logs/serial-net-dhcp-v2.txt`](logs/serial-net-dhcp-v2.txt)
-
-> **Hardware Test Status (2026-11-19): Booted, Reboot-Verified & End-to-End Serial Confirmed (v2 8 MiB ROM).**
-> `h61` cleanly cold/warm reboots across Coreboot v2 -> EDK2 UEFI -> GRUB -> Ubuntu (`Linux 7.0.0-43-generic`) with full `115200 8N1` `COM1`/`ttyS0` console & login prompt, permanent DHCP on `eno0` (`192.168.1.24`), working HDMI display (`00:02.0` `i915`), dual-channel 16 GiB DDR3 (`1332 MT/s` matching DIMM SPD max), `ALC662` + HDMI audio, VT-d/IOMMU, Tesla P4 (`86.04.8C.00.10` VBIOS, Above-4G BARs, MDEV), and autoloaded `NCT6776` `hwmon` sensors. The ME-cleaned 8 MiB ROM (`outputs/h61m-s1-plus-coreboot-8mb-full-mecleaned.rom`) is assembled and verified with `me_cleaner -c`, `ifdtool`, and `cbfstool`, awaiting first flash/boot test on hardware.
+- **Payload**: EDK2 `UefiPayloadPkg` (`https://github.com/mrchromebox/edk2`, commit `f248a68be339831b69a880d9c932a6a3cf3c461a`, `CONFIG_EDK2_RELEASE=y`, `CONFIG_EDK2_BOOT_MANAGER_ESCAPE=y`, `-D BOOTSPLASH_IMAGE=FALSE`, `5s` boot timeout)
 
 ---
 
-## Output Firmware Artifacts & Integrity Hashes
+## v26.11.1 (`v3`) Verified Fixes & Hardware Measurements
 
-`outputs/` has been cleaned to retain only the two flash-ready 8 MiB full-chip ROM images. The stock 4 MiB backup remains immutable at [`H61M-S1+/h61m-s1-plus-read0.bin`](H61M-S1+/h61m-s1-plus-read0.bin).
+> **Hardware Test Status (`v26.11.1` 8 MiB ROM): Internal `flashrom` Flashed, Reboot-Verified, S3 Suspend/Resume Verified, UEFI Monitor Setup Verified.**
 
-| Artifact | Path | Size (Bytes) | SHA-256 | Hardware Status |
-|---|---|---|---|---|
-| **v2 Full 8 MiB ROM (Stock ME)** | [`outputs/h61m-s1-plus-coreboot-8mb-full.rom`](outputs/h61m-s1-plus-coreboot-8mb-full.rom) | 8,388,608 | `0E7CD411ACD79A9246C9F95BAF5B717F5A9BFDEE3673AC56746E9FA4A7EAB175` | **Active flashed & reboot-verified** |
-| **v2 Full 8 MiB ROM (ME-Cleaned `-S`)** | [`outputs/h61m-s1-plus-coreboot-8mb-full-mecleaned.rom`](outputs/h61m-s1-plus-coreboot-8mb-full-mecleaned.rom) | 8,388,608 | `87F30AB1139F6690DE6CD0B52784C0C15484C56DE6A23B8A2F8C789896688488` | Structurally verified (`AltMeDisable` set, FTPR RSA valid, identical 6.5 MiB BIOS region `F288F84F...`); **not yet boot-tested on hardware** |
-| Stock 4 MiB Full-Chip Backup | [`H61M-S1+/h61m-s1-plus-read0.bin`](H61M-S1+/h61m-s1-plus-read0.bin) | 4,194,304 | `27CB55B24A644EB664790313631FD9AB681398E4A3EA9EC990D367F5539405BB` | Immutable stock AMI P1.10 backup |
-| Preserved Stock IFD (`0x000000–0x000fff`) | Inside stock / full ROMs | 4,096 | `B751064C357C3A2028C784E1F183C096CD250733351FC1985B767F19E7B164CC` | Unchanged byte-for-byte |
-| Preserved Stock ME (`0x001000–0x17ffff`) | Inside `...-8mb-full.rom` | 1,568,768 | `C9C21E3144B7211DF19AC52BDECBE4DFD504C2F139C2DB6D94728DF8226C93DF` | Unchanged `8.1.20.1336` in stock-ME build |
-| v2 6.5 MiB BIOS Region Slice | Embedded (`0x180000–0x7fffff`) | 6,815,744 | `F288F84F32828A4F22CB742749289FC14AC7BF3B9C1DBB0BE46E1F4DCB9F6EBA` | Identical in both 8 MiB full ROMs |
+### 1. Root-Cause Fix for Above-4G 32-Bit `ramstage` Truncation (`gma.c`, `me.c`, `azalia.c`, `smbus.c`)
+- **Problem**: Coreboot `ramstage` on Sandy/Ivy Bridge is `x86_32`. With `CONFIG_ALWAYS_ALLOW_ABOVE_4G_ALLOCATION=y`, `resource_allocator_v4` placed bus-0 64-bit BARs (`00:02.0` IGD `0x0fffc00000`/`0x0fd0000000`, `00:16.0` MEI1 `0x0fffafa000`, `00:1b.0` HDA `0x0fffafc000`, `00:1f.3` SMBus `0x0fffafb000`) above 4 GiB, causing 32-bit drivers and Ada `libgfxinit` to hit SPI flash MMIO instead of hardware (`GT init timeout`, `lightup_ok=0` blank UEFI monitor, `i915` Ivybridge `forcewake` timeout, `Azalia` codec `0x38a04bdd`, `3801 ms` `MEI1` stall).
+- **Fix & Verified Result**: Clamped `IORESOURCE_MEM` `res->limit <= 0xffffffffULL` in `.read_resources` for those 4 bus-0 devices while leaving `CONFIG_ALWAYS_ALLOW_ABOVE_4G_ALLOCATION=y` intact for discrete PCIe add-in cards:
+  - `01:00.0` (Tesla P4): `BAR14` `0x0fe0000000` (256 MiB) & `BAR1C` `0x0ff0000000` (32 MiB) stay **Above 4 GiB**.
+  - `00:02.0` (IGD): `0xdec00000` / `0xe0000000` (`libgfxinit` initializes `3840x2160` 32bpp GOP framebuffer; **zero** `GT init timeout`; **zero** Linux `i915` forcewake warnings!).
+  - `00:1b.0` (Azalia): `0xdebfc000`, `codec_mask = 09`, clean init for `Realtek ALC662 rev1` (`0x10ec0662`) and `Intel CougarPoint HDMI` (`0x80862805`).
+  - `00:16.0` (MEI1): `0xdebf7000`, finishes in `137 ms` (down from `3801 ms`).
 
-Exported diffs and config: [`coreboot_diff.patch`](coreboot_diff.patch), [`h61m-s1-plus/.config`](h61m-s1-plus/.config).
+### 2. On-Screen Debug/POST Console & UEFI Monitor Display (`fb_console.c`, `-D BOOTSPLASH_IMAGE=FALSE`)
+- `fb_console.c` renders the Coreboot CBMEM console tail, latest `POST: 0xXX`, active SmartFan IV profile, PEG bifurcation mode, and GOP geometry (`3840x2160 @ 0xe0000000`) onto the `libgfxinit` linear framebuffer at `BS_PAYLOAD_LOAD` (`BS_ON_ENTRY`) with a CFR-configurable pause (`fb_debug_pause`: `0s`/`3s`/`5s`/`10s`), followed cleanly by EDK2 GOP `ConOut` & UEFI Setup (`Boot0000* Enter Setup`).
 
----
+### 3. `LPC/TPM1` Clock (`CLKOUT_PCI1`), `LPT1` POST, S3 `PLED-`, & Wake-on-LAN / USB Wake
+- **`LPC/TPM1` & `LPT1`**: `mainboard.c` clears `CLKRUN_EN | PSEUDO_CLKRUN_EN` (`00:1f.0 GEN_PMCON_1 = 0x0a10`), keeping `CLK_PCH_PORT80` (`CLKOUT_PCI1` -> `LPC/TPM1` pin 1) free-running alongside `LPT1` (`0x378`, `CR 2F=0x03`, `CR 1C=0x80`, `LDN 0x01 CR f0=0x38`, `RCBA_GCS=0x00000c21`, `LPC_EN=0x3c0f`).
+- **S3 `PLED-` Fix (`smihandler.c` & `early_init.c`)**: Switched from broken `LDN 0x08 CR 0xf5` (WDT1) to hardware Front Panel Green LED register `HWM_DEV` `LDN 0x0b CR 0xf7` (`0x44` = `0.5 Hz` blink with `GRN_LED_RST#=1` in S3; `0x00` in S4/S5; `early_init.c` restores `0x07` steady ON on both cold boot and S3 resume).
+- **ACPI Wake (`devicetree.cb` + `dsdt.asl`)**: Set `register "gpe0_en" = "0x00002a40"` and added `Name (_PRW, Package () { 0x09, 4 })` on `PEGP`, `RP01`, `RP04`. Linux `/proc/acpi/wakeup` reports `PEGP S4 *enabled`, `RP01 S4 *enabled pci:0000:00:1c.0` (RTL8111 `02:00.0`, `Supports Wake-on: pumbg`), `EHC1 S4 *enabled`, `EHC2 S4 *enabled`.
+- **Live S3 Suspend/Resume Result**: Verified with `rtcwake -m mem -s 12` (using `/proc/driver/nvidia/suspend` procfs handshake for `NVreg_PreserveVideoMemoryAllocations=1`): Coreboot executes S3 resume path (`OS waking vector is 0x00099200` -> `POST: 0xfd`), Linux resumes cleanly with continuous uptime, zero `i915` forcewake warnings post-S3, and `LDN 0x0b CR 0xf7` restored to `0x07`.
 
-## v1 -> v2 Coreboot Changes & Live Boot Verification
-
-1. **8 MiB Flash Sizing (`Kconfig`)**: Switched from 4 MiB to `BOARD_ROMSIZE_KB_8192` + `CBFS_SIZE=0x680000` (`SMMSTORE_SIZE=0x40000`) to match the physical `W25Q64` (`SF: Detected ef 4017 with sector size 0x1000, total 0x800000`).
-2. **IGD + Headless Tesla P4 Coexistence (`src/northbridge/intel/sandybridge/early_init.c`, `.config`)**:
-   - Enabled `CONFIG_ONBOARD_VGA_IS_PRIMARY=y` and `CONFIG_GENERIC_LINEAR_FRAMEBUFFER=y` (resolving v1's `Disabling IGD.` when Tesla P4 occupied `PCIE1`).
-   - Verified in [`logs/coreboot-v2-full-bootlog.txt`](logs/coreboot-v2-full-bootlog.txt): `SA: CAPID0_A=e200e292 CAPID0_B=164000d0 DEVEN_pre=00000019 DEVEN_post=00000019 GGC=0028`, `SA: IGD 00:02.0 MMCONF=016a8086 CF8=016a8086`, `GMA: Found valid VBT in CBFS`, `IGD decoded, subtracting 32M UMA and 2M GTT`, and `IGD OPREGION 9. 0x7fe56000`.
-3. **RAM Frequency Scaling & SPD Ground Truth (`cfr.c`, `raminit.c`, `raminit_common.c`, `raminit_native.c`)**:
-   - Removed artificial frequency clamping and exposed `dram_max_speed` in CFR (`Auto (SPD/JEDEC)`, `DDR3-1600`, `DDR3-1333`, `DDR3-1066`).
-   - Hardware `decode-dimms` + `i2cdump` on `0-0050`/`0-0052` confirm the two installed 8 GB Dual-Rank Kingston `99U5471-040.A00LF` modules have an SPD **Maximum module speed of `1333 MT/s` (`PC3-10600`, `tCK = 1.500 ns`, `1.5 V`)** with no higher JEDEC/XMP profile. Coreboot trains and runs them at `Selected DRAM frequency: 666 MHz`, `Selected CAS latency: 9T` (`Configured Memory Speed: 1332 MT/s`). A genuine DDR3-1600 (`tCK = 1.250 ns`) stick scales automatically under `Auto`.
-4. **PCIe Capabilities (`.config`)**: Enabled `CONFIG_ALWAYS_ALLOW_ABOVE_4G_ALLOCATION=y`, `CONFIG_PCIEXP_PLUGIN_SUPPORT=y`, `CONFIG_PCIEXP_SUPPORT_RESIZABLE_BARS=y` (`bits=34`), `CONFIG_PCIEXP_ASPM=y`, `CONFIG_PCIEXP_CLK_PM=y`, `CONFIG_PCIEXP_COMMON_CLOCK=y`, `CONFIG_PCIEXP_LANE_ERR_STAT_CLEAR=y`, and hotplug options.
-5. **LPT1 POST Mode (`early_init.c`, `devicetree.cb`, `post.c`)**: Switched `LDN 0x01` to SPP (`0x38`, `drq=4`) with `__ROMSTAGE__` re-init and a `STROBE#` pulse in `mainboard_post()` (further LPT POST card testing deferred per user).
-
----
-
-## Post-Reboot Peripheral Verification ([`logs/peripheral-review-v2.txt`](logs/peripheral-review-v2.txt))
-
-- **Serial Console**: End-to-end `115200 8N1` confirmed across Coreboot (`ttyS0` `0x3f8` IRQ 4) -> EDK2 -> GRUB -> kernel (`console=tty0 console=ttyS0,115200n8`) -> `serial-getty@ttyS0` (`speed 115200 baud`).
-- **Networking (`eno0`, `02:00.0`, `10ec:8168`, `r8169`)**: Permanently switched to DHCP on `eno0` (`192.168.1.24/24`, `1000Mb/s Full`, `Link detected: yes`, `ASPM Disabled`, `MSI-X` IRQ 29, `br0` removed, `ssh.socket` active).
-- **Graphics & Display (`00:02.0`, `8086:016a`)**: `i915` bound, `card0-HDMI-A-1:connected`, `/dev/fb0` active. *(Logs non-fatal Ivybridge `render: timed out waiting for forcewake ack request` / `No MT forcewake available`.)*
-- **Audio (`00:1b.0`, `8086:1c20`)**: `HDA-Intel` (`card 0`) with `hwC0D0` (`Realtek ALC662 rev1` line/mic/front-panel/S/PDIF) and `hwC0D3` (HDMI audio `pcmC0D3p`, `pcmC0D7p`, `pcmC0D8p`).
-- **Tesla P4 (`01:00.0`, `10de:1bb3`) & VT-d**: `DMAR` active (`x2apic` + queued invalidation, IOMMU group 2), Above-4G BARs (`0xfe0000000` 256M, `0xff0000000` 32M), `nvidia` `535.309.01` + `nvidia_vgpu_vfio` MDEV loaded (`VBIOS 86.04.8C.00.10`). *Note: Pascal Tesla P4 advertises neither hardware SR-IOV nor Resizable BAR PCIe caps and idles at `P8` `LnkSta: 2.5GT/s x16`.*
-- **Super I/O Sensors (`NCT6776F/D`)**: `i2c-dev` + `nct6775` autoloaded via `/etc/modules-load.d/h61m-s1-plus-coreboot.conf`; `hwmon0` (`nct6776` at `0x2e:0x290`) reports live fans (`fan1=4821 RPM`, `fan2=1724 RPM`), board/aux temps (`33.0 °C`, `33.5 °C`), and rail voltages with zero ACPI resource conflicts (`hwmon1` `coretemp` `36–40 °C`).
-- **USB, Storage, Parallel, PS/2**: `ehci-pci` #1/#2 (`Bus 001`/`002`, Keychron V6 detected), `ahci` `00:1f.2` (`ata1` `EVM SSD 238.5G` `3.0 Gbps` `UDMA/133`), `parport0` (`0x378` IRQ 5), `i8042` (`IRQ 1/12`).
+### 4. Firmware Features & Checksums (`v26.11.1`)
+- **Release `v26.11.1` BIOS Region (VBT-free)**: `h61m-s1-plus-coreboot-v26.11.1-8mb-bios-region.bin` (`6,815,744` B, SHA-256 `59197b481373b5aa0cd99a544f96828bbc607353f0835fbd180de1a697b82785`).
+- **Hardware-Verified 8 MiB Full ROM (Stock ME + VBT)**: SHA-256 `823ad5faa84a35d87d66e3f13b3c9983dfcdf6956646144b635168defc449190` (`0x180000..0x7fffff` BIOS region `c90ac66db8ab3e6656a054bdd274d2b4ccfc9df327e85152125b24ee994f7d54`).
+- **Structurally Verified 8 MiB ME-Cleaned ROM (`me_cleaner -S`)**: SHA-256 `dac4580c646398cae66ff37b1a814cfa50aa336532c67f737ef7232c6bf69f85` (`AltMeDisable` set, `FTPR` RSA valid, identical BIOS region `c90ac66d...`).
 
 ---
 

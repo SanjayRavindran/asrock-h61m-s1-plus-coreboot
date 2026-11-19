@@ -16,9 +16,9 @@ description: >-
 - **Coreboot Tree**: `/home/zero/coreboot-work/h61m-s1-plus` (branch `h61m-s1-plus-port`, pinned Coreboot commit `df45ea2c49b4c7f6a1d2a969934cf6c6a2cb9018`) + bus-0 `< 4 GiB` MMIO clamp patch (`gma.c`, `azalia.c`, `me.c`, `smbus.c`) + PEG bifurcation/NRI patches
 - **EDK2 Payload**: `https://github.com/mrchromebox/edk2` pinned at `f248a68be339831b69a880d9c932a6a3cf3c461a` (`CONFIG_EDK2_RELEASE=y`, `CONFIG_EDK2_BOOT_MANAGER_ESCAPE=y`, `CONFIG_EDK2_CUSTOM_BUILD_PARAMS="-D BOOTSPLASH_IMAGE=FALSE"`, `5s` boot timeout)
 - **Board Target**: `src/mainboard/asrock/h61m-s1-plus/` (`BOARD_ASROCK_H61M_S1_PLUS`)
-- **Stock Full-Chip Backup (NEVER modify or overwrite)**:
-  - On `.15`: `~/coreboot-work/inputs/hardware-verified/h61m-s1-plus-full-chip-read0.bin` (`4,194,304` B, SHA-256 `27cb55b24a644eb664790313631fd9ab681398e4a3ea9ec990d367f5539405bb`)
-  - On Windows: [h61m-s1-plus-read0.bin](<stock-spi-backup.bin>)
+- **Two Preserved OEM BIOS Backups (NEVER modify or overwrite)**:
+  - **OEM Backup #1 (Physical Full-Chip Read)**: `~/coreboot-work/inputs/h61m-s1-plus-full-chip-read0.bin` on `.15` / [h61m-s1-plus-read0.bin](<stock-spi-backup-1.bin>) on Windows (`4,194,304` B, SHA-256 `27cb55b24a644eb664790313631fd9ab681398e4a3ea9ec990d367f5539405bb`)
+  - **OEM Backup #2 (Official ASRock AMI P1.10)**: `~/coreboot-work/inputs/H61MS1P1.10` on `.15` / [H61MS1P1.10](<stock-spi-backup-2.bin>) on Windows (`4,194,304` B, SHA-256 `e0474ec1054ecbb224211459a1090123aefcecbf582cc2dd00669c661835919c`)
 - **Preserved Non-BIOS Regions**:
   - Original 4 MiB IFD (`0x000000–0x000fff`, `4,096` B): `b751064c...`
   - Resized 8 MiB IFD (`FLREG1 = 0x07ff0180`, `0x000000–0x000fff`): `b57a922ac505e534f0b12e624193e2d007b721fc2fa452204cb2562f82eecf83`

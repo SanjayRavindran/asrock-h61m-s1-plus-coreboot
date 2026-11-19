@@ -1,6 +1,29 @@
 # Supported Processors (CPUs) — ASRock H61M-S1 PLUS + Coreboot
 
+**Quick Navigation:**
+[**Home (`README.md`)**](../README.md) ·
+[**Features Catalog**](COREBOOT-FEATURES-CATALOG.md) ·
+[**Supported CPUs**](SUPPORTED-CPUS.md) ·
+[**Hardware Map**](HARDWARE-MAP.md) ·
+[**Porting & Lessons**](PORTING-AND-LESSONS-LEARNED.md) ·
+[**Hardware Report**](HARDWARE-REPORT.md) ·
+[**Blobs & Licenses**](../BLOBS.md)
+
 This document lists **all Socket LGA1155 processors** compatible with the **ASRock H61M-S1 PLUS** (`H61M-VS4 G/A 1.00`) motherboard and this **Coreboot + EDK2** firmware port (`v26.11.2`).
+
+> [!IMPORTANT]
+> **Key Upgrade Highlights**:
+> - **Best Overall Choice**: **3rd-Gen Ivy Bridge (`22 nm`, CPUID `0x306a9`)** — specifically **`Xeon E3-1275 v2` (`77 W`, hardware-verified on this board)**, **`Xeon E3-1245 v2`**, or **`Core i7-3770`**, which provide **4C/8T**, **Intel HD Graphics (`libgfxinit`)**, **PCIe 3.0 x16**, **DDR3-1600**, and **Intel `VT-d` (IOMMU)**.
+> - **VRM Thermal Ceiling**: The board's `UP701` (`RT8876`) 3+1 phase VRM has unheatsinked MOSFETs rated up to **95 W TDP maximum** (recommended **≤ 77 W TDP** for continuous heavy workloads).
+> - **Headless (`xxx0`) Xeon Note**: Xeon models ending in `0` (e.g., `E3-1230 v2`, `E3-1240 v2`, `E3-1270 v2`) and `P`-series Core i5s have **no integrated GPU** (`HDMI1`/`VGA1` disabled) and require a discrete PCIe graphics card or `COM1` serial operation.
+
+## Table of Contents
+
+1. [Platform & Firmware CPU Support Summary](#1-platform--firmware-cpu-support-summary)
+2. [Critical Compatibility Notes Before Upgrading](#2-critical-compatibility-notes-before-upgrading)
+3. [Ivy Bridge (`22 nm`, CPUID `0x306a9`) — Recommended Family](#3-ivy-bridge-22-nm-cpuid-0x306a9--recommended-family)
+4. [Sandy Bridge (`32 nm`, CPUID `0x206a7`)](#4-sandy-bridge-32-nm-cpuid-0x206a7)
+5. [Unsupported Processors (Do NOT Install)](#5-unsupported-processors-do-not-install)
 
 ---
 

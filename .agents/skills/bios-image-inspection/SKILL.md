@@ -27,8 +27,9 @@ Follow strict read-only provenance and verification gates before treating any ve
 ## Detailed Workspace Reference Workflows
 
 Load the specific reference file matching your task:
-- Safe UEFITool/UEFIExtract inspection & validation checklist: [skill_bios_inspection.md](../../../docs/PORTING-AND-LESSONS-LEARNED.md)
-- AMI MMTool A4/A5 SHA-256s, safety rules & cross-check workflow: [skill_ami_mmtool.md](../../../docs/PORTING-AND-LESSONS-LEARNED.md)
-- Evidence-gated Coreboot board port Gates A–E: [skill_coreboot_port.md](../../../docs/PORTING-AND-LESSONS-LEARNED.md)
-- Historical H61M-S1 PLUS evidence dossier & boardview pinouts: [bios_porting_documentation.md](../../../docs/PORTING-AND-LESSONS-LEARNED.md)
-- Current post-hardware bring-up report & full docs: [H61M-S1-PLUS-COREBOOT-REPORT.md](../../../docs/HARDWARE-REPORT.md), [`docs/HARDWARE-MAP.md`](../../../docs/HARDWARE-MAP.md), [`docs/SUPPORTED-CPUS.md`](../../../docs/SUPPORTED-CPUS.md)
+- Coreboot porting history, vendor BIOS analysis & lessons learned: [`docs/PORTING-AND-LESSONS-LEARNED.md`](../../../docs/PORTING-AND-LESSONS-LEARNED.md)
+- Complete software-to-hardware connection map (boardview, GPIOs, Super I/O, VRMs): [`docs/HARDWARE-MAP.md`](../../../docs/HARDWARE-MAP.md)
+- Supported LGA1155 CPUs & microcode guide: [`docs/SUPPORTED-CPUS.md`](../../../docs/SUPPORTED-CPUS.md)
+- Coreboot software & hardware feature catalog: [`docs/COREBOOT-FEATURES-CATALOG.md`](../../../docs/COREBOOT-FEATURES-CATALOG.md)
+- Historical H61M-S1 PLUS evidence dossier & boardview pinouts: [`H61M-S1+/bios_porting_documentation.md`](../../../docs/PORTING-AND-LESSONS-LEARNED.md)
+- Current post-hardware bring-up report: [`docs/HARDWARE-REPORT.md`](../../../docs/HARDWARE-REPORT.md) and [`H61M-S1-PLUS-COREBOOT-REPORT.md`](../../../docs/HARDWARE-REPORT.md)

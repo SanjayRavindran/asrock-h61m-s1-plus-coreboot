@@ -1,10 +1,67 @@
 # Software-to-Hardware Connection Map — ASRock H61M-S1 PLUS
 
+**Quick Navigation:**
+[**Home (`README.md`)**](../README.md) ·
+[**Features Catalog**](COREBOOT-FEATURES-CATALOG.md) ·
+[**Supported CPUs**](SUPPORTED-CPUS.md) ·
+[**Hardware Map**](HARDWARE-MAP.md) ·
+[**Porting & Lessons**](PORTING-AND-LESSONS-LEARNED.md) ·
+[**Hardware Report**](HARDWARE-REPORT.md) ·
+[**Blobs & Licenses**](../BLOBS.md)
+
 Authoritative wiring, register, PCI/ACPI/IRQ, Coreboot driver, and Linux sysfs map cross-verified against the **ASRock `H61M-VS4 G/A 1.00` (`H61M-S1 PLUS R1.01`) boardview**, Coreboot `v26.11.2` source code, `inteltool -G`, `/dev/port`, and live Ubuntu `7.0.0-43-generic` telemetry (`h61`).
+
+> [!NOTE]
+> Every pin, PCI BDF, I/O port, MMIO base, and GPIO direction in this document is cross-checked against the physical boardview netlist and live runtime measurements (`lspci -vvv`, `/dev/port`, `inteltool -G`).
+
+## Table of Contents
+
+1. [System Hardware-to-Software Topology](#1-system-hardware-to-software-topology)
+2. [Master Software-to-Hardware Connection Matrix](#2-master-software-to-hardware-connection-matrix)
+3. [CPU `U1` PEG Lane-to-`PCIE1` Pinout & `CFG` Straps](#3-cpu-u1-peg-lane-to-pcie1-pinout--cfg-straps)
+4. [H61 PCH GPIO Wiring (`board/gpio.c` + `inteltool -G`)](#4-h61-pch-gpio-wiring-boardgpioc--inteltool--g)
+5. [Nuvoton `NCT6776F/D` (`U1007`, PNP `0x2e`, ID `0xc333`) Map](#5-nuvoton-nct6776fd-u1007-pnp-0x2e-id-0xc333-map)
+6. [Power Regulation Architecture (Zero Programmable PMIC Firmware)](#6-power-regulation-architecture-zero-programmable-pmic-firmware)
+7. [SPI Flash Layout (`W25Q64`, 8 MiB `0x000000–0x7fffff`)](#7-spi-flash-layout-w25q64-8-mib-0x0000000x7fffff)
 
 ---
 
 ## 1. System Hardware-to-Software Topology
+
+### Mermaid Block Diagram
+
+```mermaid
+flowchart TB
+    subgraph CPU["Socket U1 (LGA1155) — Intel Xeon E3-1275 v2"]
+        IMC["Dual-Channel DDR3 IMC (00:00.0)"]
+        IGD["Intel HD Graphics 00:02.0 (< 4 GiB 0xe0000000)"]
+        PEG["PEG10 Root Port 00:01.0 (PCIe Gen3 x16)"]
+        SVID["Intel SVID & PECI Agent 0"]
+    end
+
+    DIMM["DDR3_A1 (SPD 0x50) & DDR3_B1 (SPD 0x52)"] <-->|"raminit_native.c"| IMC
+    IGD -->|"libgfxinit Analog"| VGA["VGA1 (Rear D-Sub)"]
+    IGD -->|"libgfxinit HDMI1"| HDMI["HDMI1 (Rear HDMI + Audio)"]
+    PEG -->|"Above-4G MMIO + VT-d DMAR"| PCIE1["PCIE1 x16 Slot (NVIDIA Tesla P4 01:00.0)"]
+    SVID -->|"VR_VIDCLK / SOUT"| VRM["UP701 RT8876 (3+1 VRM) + UP751 RT9624"]
+
+    CPU <-->|"DMI x4 Link"| PCH["Intel H61 Express PCH (BD82x6x 00:1f.0)"]
+
+    PCH -->|"00:1c.0 (RP4 -> RP01)"| LAN["Realtek RTL8111 02:00.0 (r8169 eno0 + WOL)"]
+    PCH -->|"00:1b.0 (< 4 GiB 0xdebfc000)"| HDA["ALC662 (AUDIO2 / HD_AUDIO1 / SPDIF) + HDMI Audio"]
+    PCH -->|"00:1f.2 (map 0x33)"| SATA["SATA_0 (P0), SATA_1 (P1), SATA_2 (P4), SATA_3 (P5)"]
+    PCH -->|"00:1a.0 / 00:1d.0"| USB["8x USB 2.0 Ports (0-5, 8-9, shared OC0#)"]
+    PCH -->|"SPI Bus"| SPI["U3 Socketed DIP-8 W25Q64 (8 MiB: IFD + ME + 6.5M BIOS / SMMSTORE)"]
+    PCH -->|"LPC Bus (GEN_PMCON_1=0x0a10)"| LPCTPM["18-pin LPC/TPM1 Header (Port 0x80 POST)"]
+    PCH -->|"LPC 0x2e / 0x290"| SIO["U1007 Nuvoton NCT6776F/D Super I/O"]
+
+    SIO -->|"LDN 0x02 (0x3f8 IRQ 4)"| COM1["COM1 DB9 (115200 8N1 /dev/ttyS0)"]
+    SIO -.->|"LDN 0x01 (CR30=0x00)"| LPT1["LPT1 Disabled at Boot"]
+    SIO -->|"LDN 0x05 (0x60/0x64)"| PS2["PS/2 Keyboard & Mouse"]
+    SIO -->|"LDN 0x0b (0x290 + CR 0xf7)"| HWM["SmartFan IV (CPU_FAN1 / CHA_FAN1) + S3 PLED- Blink"]
+```
+
+### Detailed ASCII Interconnect Map
 
 ```text
                            +---------------------------------------------------+

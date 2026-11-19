@@ -1,6 +1,18 @@
 # ASRock H61M-S1 PLUS — Coreboot Implementation & Hardware Bring-Up Report (`v26.11.2`)
 
+**Quick Navigation:**
+[**Home (`README.md`)**](../README.md) ·
+[**Features Catalog**](COREBOOT-FEATURES-CATALOG.md) ·
+[**Supported CPUs**](SUPPORTED-CPUS.md) ·
+[**Hardware Map**](HARDWARE-MAP.md) ·
+[**Porting & Lessons**](PORTING-AND-LESSONS-LEARNED.md) ·
+[**Hardware Report**](HARDWARE-REPORT.md) ·
+[**Blobs & Licenses**](../BLOBS.md)
+
 ## Overview
+
+> [!NOTE]
+> **Hardware Test Status (`v26.11.2` 8 MiB ROM)**: Internal `flashrom` Flashed (`VERIFIED`), Reboot-Verified via `COM5` (`190,586` B captured), `COM1`-Only / `LPT1`-Disabled Verified Live, All 9 Runtime CFR `efivars` Read/Write Verified Live (`h61_coreboot_config.py`).
 
 This report records the **Coreboot + EDK2 `UefiPayloadPkg`** port, verified `v26.11.2` (and prior `v26.11.1`) hardware measurements, `COM1`-only / `LPT1`-disabled Super I/O configuration, runtime Linux `efivarfs` CFR TUI/CLI validation, power-regulation architecture, microcode/peripheral audit, and public GitHub repository release details for the **ASRock H61M-S1 PLUS** (`H61M-VS4 G/A 1.00` / `R1.01` boardview, Xeon `E3-1275 v2`, Intel H61 `8086:1c5c`, `NCT6776F/D` Super I/O, Realtek `ALC662`, Realtek `RTL8111`, NVIDIA `Tesla P4` in `PCIE1`).
 

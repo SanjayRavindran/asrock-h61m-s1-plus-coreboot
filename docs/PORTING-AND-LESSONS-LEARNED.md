@@ -1,6 +1,27 @@
 # ASRock H61M-S1 PLUS — Coreboot Porting History & Lessons Learned
 
+**Quick Navigation:**
+[**Home (`README.md`)**](../README.md) ·
+[**Features Catalog**](COREBOOT-FEATURES-CATALOG.md) ·
+[**Supported CPUs**](SUPPORTED-CPUS.md) ·
+[**Hardware Map**](HARDWARE-MAP.md) ·
+[**Porting & Lessons**](PORTING-AND-LESSONS-LEARNED.md) ·
+[**Hardware Report**](HARDWARE-REPORT.md) ·
+[**Blobs & Licenses**](../BLOBS.md)
+
 This knowledge base consolidates every hardware discovery, boardview correlation, debugging breakthrough, and Linux integration pitfall uncovered while porting **Coreboot (`df45ea2c49b4`) + EDK2 `UefiPayloadPkg` (`f248a68be339`)** from a stock 4 MiB AMI Aptio `P1.10` BIOS to a verified **8 MiB** open-source firmware (`v26.11.2`).
+
+> [!IMPORTANT]
+> **Top 3 Takeaways for Intel 6/7-Series (Sandy/Ivy Bridge + Cougar Point) Coreboot Ports**:
+> 1. **Clamp Bus-0 Chipset 64-bit BARs `< 4 GiB`** whenever `CONFIG_ALWAYS_ALLOW_ABOVE_4G_ALLOCATION=y` is enabled (`gma.c`, `azalia.c`, `me.c`, `smbus.c`) because Coreboot's `x86_32` `ramstage` truncates `> 4 GiB` BARs into the `0xff800000` SPI flash window.
+> 2. **Move Super I/O Global Registers onto an Always-On LDN (`2e.2` COM1)** before disabling `LPT1` (`2e.1`), because Coreboot's `sconfig` skips all register writes inside `off` PnP devices.
+> 3. **Set `.flags = CFR_OPTFLAG_RUNTIME`** on all Coreboot CFR objects in `cfr.c` so EDK2 `CfrSetupMenuDxe` sets `EFI_VARIABLE_RUNTIME_ACCESS` (`0x00000007`), making BIOS settings readable and writable from Linux `/sys/firmware/efi/efivars/`.
+
+## Table of Contents
+
+1. [Pre-Port Reconnaissance & Board Identity](#1-pre-port-reconnaissance--board-identity)
+2. [Critical Silicon & Firmware Bugs Solved (Bugs 1–7)](#2-critical-silicon--firmware-bugs-solved)
+3. [Linux OS & Tooling Lessons Learned (`h61`, Ubuntu `7.0.0-43-generic`)](#3-linux-os--tooling-lessons-learned-h61-ubuntu-700-43-generic)
 
 ---
 

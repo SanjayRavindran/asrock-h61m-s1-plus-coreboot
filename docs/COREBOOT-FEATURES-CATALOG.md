@@ -1,12 +1,37 @@
 # Coreboot Software & Hardware Feature Catalog — ASRock H61M-S1 PLUS (`v26.11.2`)
 
+**Quick Navigation:**
+[**Home (`README.md`)**](../README.md) ·
+[**Features Catalog**](COREBOOT-FEATURES-CATALOG.md) ·
+[**Supported CPUs**](SUPPORTED-CPUS.md) ·
+[**Hardware Map**](HARDWARE-MAP.md) ·
+[**Porting & Lessons**](PORTING-AND-LESSONS-LEARNED.md) ·
+[**Hardware Report**](HARDWARE-REPORT.md) ·
+[**Blobs & Licenses**](../BLOBS.md)
+
 Comprehensive catalog of Coreboot + EDK2 `UefiPayloadPkg` software and hardware features applicable to the **ASRock H61M-S1 PLUS** (`H61M-VS4 G/A 1.00`, LGA1155, Intel H61 `8086:1c5c`, Nuvoton `NCT6776F/D`, 8 MiB `W25Q64` SPI flash).
 
-**Status Legend**:
-- **Enabled & Verified**: Compiled, flashed internally (`--ifd -i bios`), and observed working on physical hardware.
-- **Enabled (Built-In / Partial Test)**: Compiled and initialized; specific edge hardware (e.g., `VGA1`, `1600 MT/s` DIMMs, `2x8` bifurcation riser) not yet attached.
-- **Available / Optional**: Supported by upstream Coreboot `df45ea2c49b4` / EDK2 `f248a68be339` and board silicon, ready to toggle via Kconfig/devicetree/ifdtool.
-- **Not Supported / Hardware-Limited**: Blocked by H61 silicon fuses or missing physical board traces/chips.
+> [!TIP]
+> **Status Legend & Runtime Configuration**:
+> - **Enabled & Verified**: Compiled, flashed internally (`--ifd -i bios`), and observed working on physical hardware.
+> - **Enabled (Built-In / Partial Test)**: Compiled and initialized; specific edge hardware (e.g., `VGA1`, `1600 MT/s` DIMMs, `2x8` bifurcation riser) not yet attached.
+> - **Available / Optional**: Supported by upstream Coreboot `df45ea2c49b4` / EDK2 `f248a68be339` and board silicon, ready to toggle via Kconfig/devicetree/ifdtool.
+> - **Not Supported / Hardware-Limited**: Blocked by H61 silicon fuses or missing physical board traces/chips.
+> - Use [`scripts/h61_coreboot_config.py`](../scripts/h61_coreboot_config.py) (`sudo h61-coreboot-config`) to configure all 9 runtime CFR BIOS options directly from Linux.
+
+## Table of Contents
+
+1. [Boot Payloads & Chainloading](#1-boot-payloads--chainloading)
+2. [Runtime Configuration, Telemetry & Persistence](#2-runtime-configuration-telemetry--persistence)
+3. [Debugging, Diagnostics & Profiling](#3-debugging-diagnostics--profiling)
+4. [Security, Trust & Flash Protection](#4-security-trust--flash-protection)
+5. [CPU, Microcode & Virtualization](#5-cpu-microcode--virtualization)
+6. [Memory / Sandy & Ivy Bridge Native RAM Init (`NRI`)](#6-memory--sandy--ivy-bridge-native-ram-init-nri)
+7. [Graphics & Display (`libgfxinit`)](#7-graphics--display-libgfxinit)
+8. [PCIe & Expansion](#8-pcie--expansion)
+9. [Super I/O (`NCT6776F/D`), Cooling & Front Panel](#9-super-io-nct6776fd-cooling--front-panel)
+10. [Southbridge (`H61` / `BD82x6x`), Storage, Audio, LAN & Power](#10-southbridge-h61--bd82x6x-storage-audio-lan--power)
+11. [Quick-Pick Feature Recipes](#quick-pick-feature-recipes)
 
 ---
 

@@ -11,6 +11,10 @@ OUT_DIR="${OUT_DIR:-$ROOT_DIR/outputs}"
 RELEASE_TAG="${RELEASE_TAG:-custom}"
 VBT_FILE="${VBT_FILE:-}"
 
+if [ -d /opt/xgcc/bin ]; then
+  export PATH="/opt/xgcc/bin:$PATH"
+fi
+
 if [ ! -d "$COREBOOT_DIR/src/mainboard/asrock" ]; then
   echo "ERROR: COREBOOT_DIR='$COREBOOT_DIR' is not a valid coreboot checkout." >&2
   exit 1
@@ -45,10 +49,10 @@ if [ -n "$VBT_FILE" ]; then
   sed -i '/CONFIG_INTEL_GMA_ADD_VBT/d' .config
   echo "CONFIG_INTEL_GMA_ADD_VBT=y" >> .config
 fi
-make olddefconfig
+make olddefconfig UPDATED_SUBMODULES=1
 
 echo "[4/5] Building Coreboot + EDK2 UefiPayloadPkg"
-make -j"$(nproc)"
+make -j"$(nproc)" UPDATED_SUBMODULES=1
 
 echo "[5/5] Extracting 6.5 MiB redistributable BIOS region (0x180000..0x7fffff)"
 OUT_BIOS="$OUT_DIR/h61m-s1-plus-coreboot-${RELEASE_TAG}-8mb-bios-region.bin"
@@ -68,6 +72,6 @@ PY
   ./build/cbfstool build/coreboot.rom layout -w
 } > "$OUT_DIR/cbfs-layout.txt"
 
-sha256sum "$OUT_BIOS" > "$OUT_DIR/SHA256SUMS.txt"
+(cd "$OUT_DIR" && sha256sum "$(basename "$OUT_BIOS")" > SHA256SUMS.txt)
 popd >/dev/null
 echo "Done: $OUT_BIOS"

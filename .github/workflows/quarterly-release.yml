@@ -1,6 +1,15 @@
 name: Quarterly Coreboot Release
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'board/**'
+      - 'configs/**'
+      - 'patches/**'
+      - 'scripts/**'
+      - '.github/workflows/quarterly-release.yml'
   # Coreboot official releases target March, June, September, and December (YY.03/06/09/12).
   schedule:
     - cron: '0 6 15 3,6,9,12 *'
@@ -22,7 +31,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: coreboot/coreboot-sdk:latest
+      image: coreboot/coreboot-sdk:2026-09-27_97eb3c4d52
       options: --user root
     outputs:
       release_tag: ${{ steps.meta.outputs.release_tag }}
@@ -34,7 +43,7 @@ jobs:
       - name: Determine target Coreboot release tag
         id: meta
         run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "*"
           REF="${{ github.event.inputs.coreboot_ref }}"
           if [ -z "$REF" ]; then
             REF="$(git ls-remote --tags https://github.com/coreboot/coreboot.git \
@@ -53,11 +62,16 @@ jobs:
 
       - name: Clone upstream Coreboot at target ref
         run: |
-          git clone --depth 1 --branch "${{ steps.meta.outputs.coreboot_ref }}" \
-            https://github.com/coreboot/coreboot.git coreboot
+          git init coreboot
           cd coreboot
-          git submodule update --init --depth 1 3rdparty/blobs 3rdparty/libgfxinit \
-            3rdparty/hwbase 3rdparty/vboot 3rdparty/fsp 2>/dev/null || true
+          git remote add origin https://github.com/coreboot/coreboot.git
+          git fetch --depth 1 origin "${{ steps.meta.outputs.coreboot_ref }}"
+          git checkout FETCH_HEAD
+          git submodule update --init --checkout --depth 1 \
+            3rdparty/intel-microcode \
+            3rdparty/libgfxinit \
+            3rdparty/libhwbase \
+            3rdparty/vboot
 
       - name: Build ASRock H61M-S1 PLUS 8 MiB BIOS region
         env:
@@ -77,6 +91,7 @@ jobs:
 
   publish:
     needs: build
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository

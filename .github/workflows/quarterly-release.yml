@@ -1,0 +1,128 @@
+name: Quarterly Coreboot Release
+
+on:
+  # Coreboot official releases target March, June, September, and December (YY.03/06/09/12).
+  schedule:
+    - cron: '0 6 15 3,6,9,12 *'
+  workflow_dispatch:
+    inputs:
+      coreboot_ref:
+        description: 'Coreboot git tag or commit SHA (leave blank for latest official YY.MM tag)'
+        required: false
+        default: ''
+      release_tag:
+        description: 'Release tag override (leave blank to derive v<coreboot_tag>)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: coreboot/coreboot-sdk:latest
+      options: --user root
+    outputs:
+      release_tag: ${{ steps.meta.outputs.release_tag }}
+      coreboot_ref: ${{ steps.meta.outputs.coreboot_ref }}
+    steps:
+      - name: Checkout board repository
+        uses: actions/checkout@v4
+
+      - name: Determine target Coreboot release tag
+        id: meta
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          REF="${{ github.event.inputs.coreboot_ref }}"
+          if [ -z "$REF" ]; then
+            REF="$(git ls-remote --tags https://github.com/coreboot/coreboot.git \
+              | grep -oE 'refs/tags/[0-9]{2}\.[0-9]{2}$' \
+              | sed 's#refs/tags/##' \
+              | sort -V \
+              | tail -n 1)"
+          fi
+          TAG="${{ github.event.inputs.release_tag }}"
+          if [ -z "$TAG" ]; then
+            TAG="v${REF}"
+          fi
+          echo "coreboot_ref=$REF" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Target Coreboot ref=$REF, Release tag=$TAG"
+
+      - name: Clone upstream Coreboot at target ref
+        run: |
+          git clone --depth 1 --branch "${{ steps.meta.outputs.coreboot_ref }}" \
+            https://github.com/coreboot/coreboot.git coreboot
+          cd coreboot
+          git submodule update --init --depth 1 3rdparty/blobs 3rdparty/libgfxinit \
+            3rdparty/hwbase 3rdparty/vboot 3rdparty/fsp 2>/dev/null || true
+
+      - name: Build ASRock H61M-S1 PLUS 8 MiB BIOS region
+        env:
+          COREBOOT_DIR: ${{ github.workspace }}/coreboot
+          RELEASE_TAG: ${{ steps.meta.outputs.release_tag }}
+          OUT_DIR: ${{ github.workspace }}/release-out
+        run: |
+          bash scripts/build.sh
+          cp -f configs/h61m-s1-plus-8mb.defconfig release-out/
+          cp -f patches/0001-sandybridge-h61m-s1-plus-igd-raminit.patch release-out/
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: h61m-s1-plus-release-assets
+          path: release-out/*
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: h61m-s1-plus-release-assets
+          path: release-out
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REL_TAG: ${{ needs.build.outputs.release_tag }}
+          CB_REF: ${{ needs.build.outputs.coreboot_ref }}
+        run: |
+          if gh release view "$REL_TAG" >/dev/null 2>&1; then
+            echo "Release $REL_TAG already exists; skipping duplicate creation."
+            exit 0
+          fi
+          python3 - <<'PY' > release-notes.md
+          import os
+          tag = os.environ["REL_TAG"]
+          ref = os.environ["CB_REF"]
+          print(f"""## ASRock H61M-S1 PLUS — Quarterly Coreboot + EDK2 Release (`{tag}`)
+
+          Automated quarterly Coreboot BIOS-region build tracking upstream Coreboot release `{ref}` with EDK2 `UefiPayloadPkg`.
+
+          ### Included Open-Source Assets
+          - `h61m-s1-plus-coreboot-{tag}-8mb-bios-region.bin` (6.5 MiB `0x180000..0x7fffff` BIOS region, built without proprietary ASRock `vbt.bin`, IFD, or ME)
+          - `cbfs-layout.txt` (CBFS & FMAP verification output)
+          - `h61m-s1-plus-8mb.defconfig` & `0001-sandybridge-h61m-s1-plus-igd-raminit.patch`
+          - `SHA256SUMS.txt`
+
+          ### Assembling a Complete 8 MiB Flashable ROM
+          Provide your own stock SPI dump (4 KiB IFD + Intel ME) and optionally your extracted desktop VBT + `me_cleaner`:
+          ```bash
+          bash scripts/assemble_full_rom.sh \\
+            --stock-dump stock_backup.bin \\
+            --bios-region h61m-s1-plus-coreboot-{tag}-8mb-bios-region.bin \\
+            --out h61m-s1-plus-coreboot-{tag}-8mb-full.rom \\
+            --me-cleaner /path/to/me_cleaner.py
+          ```
+          See [`BLOBS.md`](BLOBS.md) and [`README.md`](README.md) for blob provenance, hardware test scope, and risk/LLM disclaimers.""")
+          PY
+          gh release create "$REL_TAG" release-out/* \
+            --title "ASRock H61M-S1 PLUS Coreboot ${REL_TAG} (upstream ${CB_REF})" \
+            --notes-file release-notes.md

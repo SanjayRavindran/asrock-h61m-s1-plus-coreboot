@@ -1,0 +1,4 @@
+## SPDX-License-Identifier: GPL-2.0-only
+
+config BOARD_ASROCK_H61M_S1_PLUS
+	bool "H61M-S1 PLUS"

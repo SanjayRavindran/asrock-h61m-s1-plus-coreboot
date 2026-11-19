@@ -1,0 +1,10 @@
+build/
+outputs/
+*.rom
+*.bin
+*.vbt
+*.fz
+*.bak
+*.swp
+__pycache__/
+.DS_Store

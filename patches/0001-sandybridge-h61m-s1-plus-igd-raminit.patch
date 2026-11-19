@@ -1,0 +1,118 @@
+diff --git a/src/northbridge/intel/sandybridge/early_init.c b/src/northbridge/intel/sandybridge/early_init.c
+index 1d8a1e8b..92aa1618 100644
+--- a/src/northbridge/intel/sandybridge/early_init.c
++++ b/src/northbridge/intel/sandybridge/early_init.c
+@@ -8,6 +8,8 @@
+ #include <option.h>
+ #include <types.h>
+ 
++#include <arch/pci_io_cfg.h>
++#include <delay.h>
+ #include "sandybridge.h"
+ 
+ static void systemagent_vtd_init(void)
+@@ -180,8 +182,32 @@ void systemagent_early_init(void)
+ 	systemagent_vtd_init();
+ 
+ 	/* Device Enable, don't touch PEG bits */
++	const u32 deven_before = pci_read_config32(HOST_BRIDGE, DEVEN);
+ 	pci_or_config32(HOST_BRIDGE, DEVEN, DEVEN_IGD);
+ 
++	/* H61M-S1+ IGD bring-up diagnostics */
++	printk(BIOS_DEBUG, "SA: CAPID0_A=%08x CAPID0_B=%08x DEVEN_pre=%08x DEVEN_post=%08x GGC=%04x\n",
++	       pci_read_config32(HOST_BRIDGE, CAPID0_A),
++	       pci_read_config32(HOST_BRIDGE, CAPID0_B),
++	       deven_before,
++	       pci_read_config32(HOST_BRIDGE, DEVEN),
++	       pci_read_config16(HOST_BRIDGE, GGC));
++	printk(BIOS_DEBUG, "SA: IGD 00:02.0 MMCONF=%08x CF8=%08x (host DID=%04x)\n",
++	       pci_read_config32(PCI_DEV(0, 2, 0), PCI_VENDOR_ID),
++	       pci_io_read_config32(PCI_DEV(0, 2, 0), PCI_VENDOR_ID),
++	       pci_read_config16(HOST_BRIDGE, PCI_DEVICE_ID));
++
++	if (pci_read_config16(PCI_DEV(0, 2, 0), PCI_VENDOR_ID) == 0xffff) {
++		/* Give Device 2 time to come out of reset, then try again. */
++		mdelay(20);
++		pci_or_config32(HOST_BRIDGE, DEVEN, DEVEN_IGD);
++		mdelay(20);
++		printk(BIOS_DEBUG, "SA: IGD retry: DEVEN=%08x MMCONF=%08x CF8=%08x\n",
++		       pci_read_config32(HOST_BRIDGE, DEVEN),
++		       pci_read_config32(PCI_DEV(0, 2, 0), PCI_VENDOR_ID),
++		       pci_io_read_config32(PCI_DEV(0, 2, 0), PCI_VENDOR_ID));
++	}
++
+ 	sandybridge_setup_graphics();
+ 
+ 	/*
+diff --git a/src/northbridge/intel/sandybridge/raminit.c b/src/northbridge/intel/sandybridge/raminit.c
+index b024c399..0d9f9020 100644
+--- a/src/northbridge/intel/sandybridge/raminit.c
++++ b/src/northbridge/intel/sandybridge/raminit.c
+@@ -232,11 +232,11 @@ static void dram_find_spds_ddr3(spd_ddr3_raw_data *spd, ramctr_timing *ctrl)
+ 					DDR3_XMP_PROFILE_1);
+ 
+ 			if (dimm->dram_type != SPD_MEMORY_TYPE_SDRAM_DDR3) {
+-				printram("No valid XMP profile found.\n");
++				printk(BIOS_DEBUG, "No valid XMP profile found.\n");
+ 				spd_decode_ddr3(dimm, spd[spd_slot]);
+ 
+ 			} else if (ch_dimms > dimm->dimms_per_channel) {
+-				printram(
++				printk(BIOS_DEBUG,
+ 				"XMP profile supports %u DIMMs, but %u DIMMs are installed.\n",
+ 					dimm->dimms_per_channel, ch_dimms);
+ 
+@@ -248,7 +248,7 @@ static void dram_find_spds_ddr3(spd_ddr3_raw_data *spd, ramctr_timing *ctrl)
+ 
+ 			} else if (dimm->voltage != 1500) {
+ 				/* TODO: Support DDR3 voltages other than 1500mV */
+-				printram("XMP profile's requested %u mV is unsupported.\n",
++				printk(BIOS_DEBUG, "XMP profile's requested %u mV is unsupported.\n",
+ 						 dimm->voltage);
+ 
+ 				if (CONFIG(NATIVE_RAMINIT_IGNORE_XMP_REQUESTED_VOLTAGE))
+diff --git a/src/northbridge/intel/sandybridge/raminit_common.c b/src/northbridge/intel/sandybridge/raminit_common.c
+index 3e1a3732..51bed632 100644
+--- a/src/northbridge/intel/sandybridge/raminit_common.c
++++ b/src/northbridge/intel/sandybridge/raminit_common.c
+@@ -2358,8 +2358,8 @@ static int find_agrsv_read_margin(ramctr_timing *ctrl, int channel, int slotrank
+ 
+ 				edges[lane] = (lower[lane] + upper[lane]) / 2;
+ 				if (rn.all || (lower[lane] > upper[lane])) {
+-					printk(BIOS_EMERG, "Aggressive read training failed: "
+-						"%d, %d, %d\n", channel, slotrank, lane);
++					printk(BIOS_EMERG, "Aggressive read training failed: ch=%d rank=%d lane=%d (vref=%d pat=%d rn=[%d..%d] all=%d lo=%d hi=%d off=%d)\n",
++					       channel, slotrank, lane, i, pat, rn.start, rn.end, rn.all, lower[lane], upper[lane], ctrl->edge_offset[i]);
+ 
+ 					return MAKE_ERR;
+ 				}
+diff --git a/src/northbridge/intel/sandybridge/raminit_native.c b/src/northbridge/intel/sandybridge/raminit_native.c
+index 282058b0..f3e3e1f8 100644
+--- a/src/northbridge/intel/sandybridge/raminit_native.c
++++ b/src/northbridge/intel/sandybridge/raminit_native.c
+@@ -9,6 +9,7 @@
+ #include <device/pci_def.h>
+ #include <device/pci_ops.h>
+ #include <northbridge/intel/sandybridge/chip.h>
++#include <option.h>
+ #include <static.h>
+ #include <stdbool.h>
+ #include <stdint.h>
+@@ -270,6 +271,17 @@ static unsigned int get_mem_min_tck(void)
+ 	u8 rev;
+ 	const struct northbridge_intel_sandybridge_config *cfg = NULL;
+ 
++	switch (get_uint_option("dram_max_speed", 0)) {
++	case 1:
++		return TCK_800MHZ;
++	case 2:
++		return TCK_666MHZ;
++	case 3:
++		return TCK_533MHZ;
++	default:
++		break;
++	}
++
+ 	/* Actually, config of MCH or Host Bridge */
+ 	cfg = config_of_soc();
+ 

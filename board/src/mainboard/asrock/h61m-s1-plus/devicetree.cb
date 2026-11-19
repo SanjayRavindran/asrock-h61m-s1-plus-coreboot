@@ -82,7 +82,8 @@ chip northbridge/intel/sandybridge
 				subsystemid 0x1849 0x1c5c
 				chip superio/nuvoton/nct6776
 					device pnp 2e.0 off end		# Floppy
-					device pnp 2e.1 on		# Parallel port (LPT1)
+					device pnp 2e.1 off end		# Parallel port (LPT1, disabled at boot)
+					device pnp 2e.2 on		# COM1
 						# global registers
 						irq 0x13 = 0xff
 						irq 0x14 = 0xff
@@ -93,13 +94,7 @@ chip northbridge/intel/sandybridge
 						irq 0x2a = 0x60
 						irq 0x2c = 0x80
 						irq 0x2f = 0x03
-						# parallel port resources
-						io 0x60 = 0x378
-						irq 0x70 = 5
-						drq 0x74 = 4		# No DMA in SPP mode
-						irq 0xf0 = 0x38		# SPP mode: DATA0-7 always driven (POST on LPT)
-					end
-					device pnp 2e.2 on		# COM1
+						# COM1 resources
 						io 0x60 = 0x3f8
 						irq 0x70 = 4
 					end

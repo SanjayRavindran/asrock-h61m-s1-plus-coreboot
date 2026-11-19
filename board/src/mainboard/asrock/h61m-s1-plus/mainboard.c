@@ -9,6 +9,7 @@
 #include <drivers/intel/gma/int15.h>
 #include <option.h>
 #include <southbridge/intel/bd82x6x/pch.h>
+#include <southbridge/intel/common/lpc_def.h>
 #include <superio/nuvoton/common/hwm.h>
 #include <types.h>
 
@@ -90,6 +91,12 @@ static void platform_late_init(void *arg)
 		u16 pmcon1 = pci_read_config16(lpc, GEN_PMCON_1);
 		pmcon1 &= ~(3 << 2);
 		pci_write_config16(lpc, GEN_PMCON_1, pmcon1);
+
+		/* Disable PCH LPT decode (0x378-0x37f); keep COM1 and LPC Port 0x80 active */
+		u16 lpc_en = pci_read_config16(lpc, LPC_EN);
+		lpc_en &= ~LPT_LPC_EN;
+		pci_write_config16(lpc, LPC_EN, lpc_en);
+
 		printk(BIOS_INFO, "LPC: GEN_PMCON_1=0x%04x RCBA_GCS=0x%08x LPC_EN=0x%04x\n",
 		       pci_read_config16(lpc, GEN_PMCON_1),
 		       RCBA32(GCS),

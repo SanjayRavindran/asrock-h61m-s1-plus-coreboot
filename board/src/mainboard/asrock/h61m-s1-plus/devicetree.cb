@@ -82,7 +82,12 @@ chip northbridge/intel/sandybridge
 				subsystemid 0x1849 0x1c5c
 				chip superio/nuvoton/nct6776
 					device pnp 2e.0 off end		# Floppy
-					device pnp 2e.1 off end		# Parallel port (LPT1, disabled at boot)
+					device pnp 2e.1 on		# Parallel port (LPT1)
+						io 0x60 = 0x378
+						irq 0x70 = 5
+						drq 0x74 = 4		# No DMA in SPP mode
+						irq 0xf0 = 0x38		# SPP/bi-directional mode
+					end
 					device pnp 2e.2 on		# COM1
 						# global registers
 						irq 0x13 = 0xff
@@ -136,6 +141,9 @@ chip northbridge/intel/sandybridge
 					device pnp 2e.14 on end		# SVID
 					device pnp 2e.16 on end		# Deep Sleep
 					device pnp 2e.17 on end		# GPIOA
+				end
+				chip drivers/pc80/tpm
+					device pnp 0c31.0 on end	# LPC/TPM1 header (0xfed40000)
 				end
 			end
 			device ref sata1 on

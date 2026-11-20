@@ -1,9 +1,9 @@
 # ASRock H61M-S1 PLUS — Coreboot + EDK2 UEFI Port
 
-![Release](https://img.shields.io/badge/Release-v26.11.2-2ea44f?style=flat-square)
+![Release](https://img.shields.io/badge/Release-v26.11.3-2ea44f?style=flat-square)
 ![Coreboot](https://img.shields.io/badge/Coreboot-df45ea2c49b4-0066cc?style=flat-square)
 ![Payload](https://img.shields.io/badge/Payload-EDK2%20UefiPayloadPkg-5c2d91?style=flat-square)
-![Flash](https://img.shields.io/badge/SPI%20Flash-8%20MiB%20W25Q64-d97706?style=flat-square)
+![Flash](https://img.shields.io/badge/SPI%20Flash-W25Q32%20(4M)%20%7C%20W25Q64%20(8M)-d97706?style=flat-square)
 ![Hardware](https://img.shields.io/badge/Hardware-Verified%20on%20H61M--S1%20PLUS-success?style=flat-square)
 ![License](https://img.shields.io/badge/License-GPL--2.0%20%2F%20BSD--2--Clause--Patent-blue?style=flat-square)
 
@@ -18,7 +18,13 @@
 [**OS Configurator (`h61_coreboot_config.py`)**](scripts/h61_coreboot_config.py) ·
 [**Agent Skills**](.agents/skills/)
 
-Open-source **Coreboot + EDK2 `UefiPayloadPkg`** board port, Sandy/Ivy Bridge chipset patches, Linux OS runtime TUI/CLI configurator ([`scripts/h61_coreboot_config.py`](scripts/h61_coreboot_config.py)), build/assembly scripts, comprehensive hardware/CPU/feature documentation, AI agent skills ([`.agents/skills/`](.agents/skills/)), and automated quarterly release pipeline ([`quarterly-release.yml`](.github/workflows/quarterly-release.yml)) for the **ASRock H61M-S1 PLUS** motherboard (`H61M-VS4 G/A 1.00`, LGA1155, Intel H61 Express `8086:1c5c`, Nuvoton `NCT6776F/D` Super I/O, Realtek `ALC662`, Realtek `RTL8111`, 8 MiB `W25Q64` SPI flash).
+Open-source **Coreboot + EDK2 `UefiPayloadPkg`** board port, Sandy/Ivy Bridge chipset patches, **`Delete`-key USB Boot Menu** EDK2 enhancement ([`patches/0002-edk2-delete-key-usb-boot-menu.patch`](patches/0002-edk2-delete-key-usb-boot-menu.patch)), Linux OS runtime TUI/CLI configurator ([`scripts/h61_coreboot_config.py`](scripts/h61_coreboot_config.py)), ready-to-flash **4 MiB (`W25Q32`) & 8 MiB (`W25Q64`)** ROMs with committed IFD/ME/VBT blobs ([`blobs/`](blobs/)), comprehensive documentation, AI agent skills ([`.agents/skills/`](.agents/skills/)), and automated CI release pipeline ([`quarterly-release.yml`](.github/workflows/quarterly-release.yml)) for the **ASRock H61M-S1 PLUS** motherboard (`H61M-VS4 G/A 1.00`, LGA1155, Intel H61 Express `8086:1c5c`, Nuvoton `NCT6776F/D` Super I/O, Realtek `ALC662`, Realtek `RTL8111`, `W25Q32` / `W25Q64` SPI flash).
+
+### Highlights New in `v26.11.3`
+- **Dedicated `Delete`-Key USB Boot Device Menu**: Tapping **`Delete`** during the `5s` boot prompt (`Press ESC for Setup, DEL for USB Boot Menu` / `Del to select USB Boot Device.`) opens **`Select USB Boot Device:`** for choosing a bootable USB disk — **always prompting even if only 1 or >1 USB bootable disks exist**, safely showing `"No bootable USB devices found."` with `R` (rescan) & `ESC` (continue boot) when none are connected, and working across PS/2, USB HID, and serial terminals (`\x1b[3~`, `0x7f`, `ESC[X`).
+- **Parallel Port (`LPT1`) Enabled**: `NCT6776F` `LDN 0x01` enabled at `0x378`, `IRQ 5`, `DRQ 4`, `SPP` (`CRf0=0x38`, ACPI `PNP0400`, Linux `parport0`) without `0x378` POST traffic interfering with parallel devices.
+- **`LPC/TPM1` Port `0x80` POST Codes & TPM Probe**: `CONFIG_DEFAULT_POST_ON_LPC=y`, `RCBA_GCS=0x00000c21` (`RPR=0`), free-running 33 MHz `CLK_PCH_PORT80` (`GEN_PMCON_1=0x0a10`), EDK2 BDS POST codes (`0xE1..0xE8`), and `MAINBOARD_HAS_TPM1` / `MEMORY_MAPPED_TPM` (`0xfed40000`) probe on `LPC/TPM1`.
+- **4 Public Ready-to-Flash ROM Variants (`W25Q32` & `W25Q64`) with Blobs**: Includes **124 KiB relocated minimal ME** (`me_cleaner -S -r -t -d`, `AltMeDisable=1`, `FLMSTR1=0xffff0000` unlocked IFD) for both `W25Q64` (`7.875 MiB` BIOS) and `W25Q32` (`3.875 MiB` BIOS), plus `0x180000`-offset images for internal `flashrom --ifd -i bios` updates.
 
 ---
 
@@ -27,31 +33,29 @@ Open-source **Coreboot + EDK2 `UefiPayloadPkg`** board port, Sandy/Ivy Bridge ch
 1. [Disclaimers & Known Caveats](#1-disclaimers--known-caveats)
 2. [Documentation Index](#2-documentation-index)
 3. [Software-to-Hardware Connection Map](#3-software-to-hardware-connection-map)
-4. [Verified Hardware Status (`v26.11.2`)](#4-verified-hardware-status-v26112)
-5. [Configuring Coreboot from Linux TUI/CLI or UEFI Setup](#5-configuring-coreboot-from-linux-tuicli-or-uefi-setup)
-6. [Building & Assembling a Full 8 MiB Flashable ROM](#6-building--assembling-a-full-8-mib-flashable-rom)
-7. [Repository Layout](#7-repository-layout)
+4. [Ready-to-Flash ROM Variants (`v26.11.3`, Blobs Included)](#4-ready-to-flash-rom-variants-v26113-blobs-included)
+5. [Verified Hardware Status (`v26.11.3`)](#5-verified-hardware-status-v26113)
+6. [Configuring Coreboot from Linux TUI/CLI or UEFI Setup](#6-configuring-coreboot-from-linux-tuicli-or-uefi-setup)
+7. [Building & Flashing Guide](#7-building--flashing-guide)
+8. [Repository Layout](#8-repository-layout)
 
 ---
 
 ## 1. Disclaimers & Known Caveats
 
 > [!CAUTION]
-> **Hardware Risk & Recovery**: Flashing motherboard SPI firmware can permanently brick hardware if interrupted or misconfigured. This project is provided **AS IS** with **NO WARRANTY**. Always capture and verify two independent full-chip stock backups with an external SPI flash programmer (e.g., CH341A / Dediprog / `flashrom`) before writing any ROM. Never flash raw `coreboot.rom` builds or redistributable BIOS-region slices directly onto the whole chip without assembling them with your stock Intel Flash Descriptor (IFD) and Intel ME via [`scripts/assemble_full_rom.sh`](scripts/assemble_full_rom.sh).
+> **Hardware Risk & Recovery**: Flashing motherboard SPI firmware can permanently brick hardware if interrupted or misconfigured. This project is provided **AS IS** with **NO WARRANTY**. Always capture and verify two independent full-chip stock backups with an external SPI flash programmer before writing any ROM. Only flash ROMs matching your physical chip size (`4 MiB` `W25Q32` vs `8 MiB` `W25Q64`).
 
 > [!WARNING]
-> **Known Disabled, Deferred, or Caveated Items (`v26.11.2`)**:
-> - **Parallel Port (`LPT1`) Intentionally Disabled at Boot (`COM1`-Only)**: As of `v26.11.2`, `NCT6776F` `LDN 0x01` (`LPT1` `0x378`), ACPI `PNP0400`, `0x378` LPT POST mirroring (`post.c`), and PCH `LPC_EN[2]` (`LPT_LPC_EN`) are **disabled at boot** so only `COM1` (`0x3f8`, IRQ 4, `115200 8N1`) is active.
-> - **Physical `VGA1` Dual-Head & Physical `LPC/TPM1` POST Card**: Pure open-source `libgfxinit` configures both `HDMI1` + `Analog` pipes (`gma-mainboard.ads`), and `LPC/TPM1` `CLKOUT_PCI1` gating (`PSEUDO_CLKRUN_EN`) is cleared (`GEN_PMCON_1=0x0a10`), with all registers verified live via `/dev/port` and `lspci`. Live tests used an `HDMI` monitor (`VGA-1` unplugged) without attaching a hardware LPC POST reader.
-> - **ACPI S3 with NVIDIA Proprietary / vGPU Driver (`NVreg_PreserveVideoMemoryAllocations=1`)**: Linux requires writing `suspend` to `/proc/driver/nvidia/suspend` before sleeping (and `resume` afterward), otherwise `nvidia` vetoes `pm_suspend` with `-EIO`. [`scripts/h61_coreboot_config.py`](scripts/h61_coreboot_config.py) (`s3` command & TUI) performs this handshake automatically.
-> - **PCIe x16 Slot Bifurcation (`2x8` / `1x8+2x4`)**: Exposed in runtime CFR (`peg_bifurcation`) and gated in `early_init.c`/`northbridge.c` (defaulting to `1x16`). On Ivy Bridge LGA1155, splitting lanes also requires CPU `CFG[6:5]` physical hardware straps; only `1x16` (`PCIE1`) is tested on hardware.
-> - **NVIDIA Tesla P4 (`10de:1bb3`)**: Pascal Tesla P4 does not advertise hardware SR-IOV or Resizable BAR capabilities despite Coreboot ReBAR/plugin support; vGPU uses `nvidia_vgpu_vfio` MDEV, idling at `P8` `2.5GT/s x16`.
-> - **ME-Cleaned Image Hardware Boot**: An 8 MiB `me_cleaner.py -S` image is built and structurally validated (`AltMeDisable` set, `FTPR` RSA valid, byte-identical BIOS region); live boot validation on hardware remains pending vs the hardware-verified stock-ME 8 MiB image.
-> - **DDR3-1600 / 1.65 V XMP Testing**: `CONFIG_NATIVE_RAMINIT_IGNORE_XMP_REQUESTED_VOLTAGE=y` and `Auto` SPD frequency are enabled, while the tested Kingston `99U5471-040.A00LF` pair is `1.5 V` `1333 MT/s` max (`666 MHz` / `1332 MT/s` `CL9`). True `1600+ MT/s` / `1.65 V` XMP sticks await testing.
-> - **Runtime CBMEM Log on Stock Ubuntu Kernels**: Stock Ubuntu kernels omit `drivers/firmware/google/` (`memconsole_coreboot`); view Coreboot logs at boot on-screen via `fb_console` or capture over `COM1` (`115200 8N1`).
+> **Known Caveats (`v26.11.3`)**:
+> - **Internal vs External SPI Flashing for Minimal ME**: If your board currently boots with a stock vendor-locked IFD (`FREG2` locked internally, `0x001000–0x17ffff`), `flashrom -p internal` can ONLY update `FREG1` (`0x180000+`) using `*-w25q64-8mb-mecleaned-compat-full.rom` (`8 MiB`) or `*-w25q32-4mb-stock-me-full.rom` (`4 MiB`). To switch to the **`124 KiB` minimal-ME (`AltMeDisable=1`) + `FLMSTR1=0xffff0000` unlocked** layout (`w25q64-8mb-minimal-me-full.rom` / `w25q32-4mb-minimal-me-full.rom`), pull socketed DIP-8 `U3` and flash once with an external SPI programmer (unlocking full-chip internal `flashrom` writes permanently afterward).
+> - **Cougar Point H61 ME Requirement & `me_state`**: H61 (`Cougar Point`) hardware enforces a 30-minute power-off timer if `FTPR` (`ROMP` + `BUP`) is absent from ME; thus `me_cleaner -S -r -t -d` (`124 KiB` `FTPR` + `AltMeDisable=1`) is the minimum hardware-safe ME. Also leave runtime CFR `me_state=0` (`Normal`) when running locked stock `FREG2` ME `8.1.20.1336` (Coreboot's `me_smm.c` already hides `00:16.0` from Linux before OS handoff, whereas `me_state=1` triggers a harmless ~1.3s `ME_GEN_7` MKHI timeout warning).
+> - **Physical `VGA1`, Physical `LPC/TPM1` Card, & USB Stick Selection**: `libgfxinit` configures both `HDMI1` + `Analog`, and Port `0x80` + TPM `0xfed40000` routing is live-verified via Coreboot registers (`RCBA_GCS`, `GEN_PMCON_1`) and serial logs (`Del` key USB menu verified live via `COM5` in empty state `"No bootable USB devices found."`). Physical D-Sub monitor, physical LPC POST reader, discrete TPM module, multi-USB-stick selection, and `1600 MT/s` / `1.65 V` XMP sticks remain untested directly on hardware.
+> - **ACPI S3 with NVIDIA Proprietary / vGPU Driver (`NVreg_PreserveVideoMemoryAllocations=1`)**: Linux requires writing `suspend` to `/proc/driver/nvidia/suspend` before sleeping (and `resume` afterward); [`scripts/h61_coreboot_config.py`](scripts/h61_coreboot_config.py) (`s3` command & TUI) performs this handshake automatically.
+> - **PCIe x16 Slot Bifurcation (`2x8` / `1x8+2x4`)**: Exposed in runtime CFR (`peg_bifurcation`); on Ivy Bridge LGA1155, splitting lanes also requires CPU `CFG[6:5]` physical hardware straps; only `1x16` (`PCIE1`) is tested on hardware.
 
 > [!NOTE]
-> **LLM / AI-Assisted Engineering Disclaimer**: Portions of the board port source files, chipset patches, Python TUI/CLI configurator, skill workflows, and documentation were authored or refined with **Large Language Model (LLM)** assistance under human supervision, and cross-checked against the ASRock `H61M-VS4 G/A 1.00` boardview, Intel/Nuvoton/Realtek/Winbond datasheets, stock SPI dumps, and live physical hardware telemetry.
+> **LLM / AI-Assisted Engineering Disclaimer**: Portions of the board port source files, chipset/EDK2 patches, Python TUI/CLI configurator, skill workflows, and documentation were authored or refined with **Large Language Model (LLM)** assistance under human supervision, and cross-checked against the ASRock `H61M-VS4 G/A 1.00` boardview, Intel/Nuvoton/Realtek/Winbond datasheets, stock SPI dumps, and live physical hardware telemetry.
 
 ---
 
@@ -59,13 +63,13 @@ Open-source **Coreboot + EDK2 `UefiPayloadPkg`** board port, Sandy/Ivy Bridge ch
 
 | Document | Contents |
 |---|---|
-| [**`docs/COREBOOT-FEATURES-CATALOG.md`**](docs/COREBOOT-FEATURES-CATALOG.md) | Exhaustive tables of **all** Coreboot software & hardware features for the H61M-S1 PLUS (`vboot`, Heads/LinuxBoot, SeaBIOS/iPXE/Memtest86+, `CFR`/`SMMSTORE`, `libgfxinit`, `NRI` XMP, SmartFan IV, TPM/SPI locks, quick-pick recipes) |
-| [**`docs/SUPPORTED-CPUS.md`**](docs/SUPPORTED-CPUS.md) | Complete **Supported LGA1155 CPUs** list (Xeon E3-1200 v1/v2, Core i7/i5/i3 2xxx/3xxx, Pentium, Celeron, microcode revisions, `UP701` `RT8876` 95 W VRM ceiling, IGD/VT-d/PCIe 3.0 caveats) |
-| [**`docs/HARDWARE-MAP.md`**](docs/HARDWARE-MAP.md) | Full **Software-to-Hardware Connection Map** (CPU `U1` PEG/CFG pins, PCH GPIOs `0..75`, `NCT6776F` LDNs & pin-mux, VRM rails, HDA verbs, SPI flash layout) |
-| [**`docs/PORTING-AND-LESSONS-LEARNED.md`**](docs/PORTING-AND-LESSONS-LEARNED.md) | Accumulated platform engineering knowledge (Above-4G 32-bit `ramstage` bug fix, EDK2 `BOOTSPLASH_IMAGE`, `NCT6776` `LDN 0x0b CR 0xf7`, `CLKRUN`, `efivarfs`, Netplan `eno0`, NVIDIA S3, CH340 Error 31) |
-| [**`docs/HARDWARE-REPORT.md`**](docs/HARDWARE-REPORT.md) | Live hardware bring-up telemetry, `flashrom` verification logs, and `v26.11.2` release checksums |
-| [**`BLOBS.md`**](BLOBS.md) & [**`LICENSES/`**](LICENSES/) | Open-source licenses (`GPL-2.0-only`, `GPL-2.0-or-later`, `BSD-2-Clause-Patent`, Intel Microcode) and binary blob provenance/download notes |
-| [**`.agents/skills/`**](.agents/skills/) | Reusable sanitized AI agent workflows & Win32 `COM` serial tools (`com_serial.py`, `serial_exec.py`) |
+| [**`docs/COREBOOT-FEATURES-CATALOG.md`**](docs/COREBOOT-FEATURES-CATALOG.md) | Exhaustive tables of **all** Coreboot software & hardware features (`v26.11.3` Delete-key USB Boot Menu, `LPT1`, `LPC/TPM1`, `vboot`, `CFR`/`SMMSTORE`, `libgfxinit`, `NRI` XMP, SmartFan IV, `W25Q32`/`W25Q64` ME variants) |
+| [**`docs/SUPPORTED-CPUS.md`**](docs/SUPPORTED-CPUS.md) | Complete **Supported LGA1155 CPUs** list (Xeon E3-1200 v1/v2, Core i7/i5/i3 2xxx/3xxx, Pentium, Celeron, `UP701` `RT8876` 95 W VRM ceiling, IGD/VT-d/PCIe 3.0 caveats) |
+| [**`docs/HARDWARE-MAP.md`**](docs/HARDWARE-MAP.md) | Full **Software-to-Hardware Connection Map** (CPU `U1` PEG/CFG pins, PCH GPIOs `0..75`, `NCT6776F` LDNs & pin-mux, VRM rails, 4-variant SPI flash layouts) |
+| [**`docs/PORTING-AND-LESSONS-LEARNED.md`**](docs/PORTING-AND-LESSONS-LEARNED.md) | Accumulated platform engineering knowledge (Above-4G 32-bit clamp, `TerminalConIn.c` `PcAnsi` VT220 `Delete` decode, `BootManagerMenuApp` short-form USB match, `me_cleaner` `124 KiB` alignment, `ME_GEN_7` vs ME `8.1.20`) |
+| [**`docs/HARDWARE-REPORT.md`**](docs/HARDWARE-REPORT.md) | Live hardware bring-up telemetry, `flashrom` verification logs, `COM5` Delete-key proof, and `v26.11.3` release checksums |
+| [**`BLOBS.md`**](BLOBS.md) & [**`LICENSES/`**](LICENSES/) | Complete inventory & SHA-256 hashes of all 8 committed blobs (`blobs/`) + open-source/proprietary licenses |
+| [**`.agents/skills/`**](.agents/skills/) | Reusable AI agent workflows (`coreboot-build-and-flash`, `edk2-usb-boot-and-me-variants`, `h61m-s1-plus-linux-bringup`, `serial-communication`, `bios-image-inspection`) |
 
 ---
 
@@ -83,177 +87,120 @@ flowchart TB
     end
 
     DIMM["DDR3_A1 (SPD 0x50) & DDR3_B1 (SPD 0x52)"] <-->|"raminit_native.c"| IMC
-    IGD -->|"libgfxinit Analog"| VGA["VGA1 (Rear D-Sub)"]
-    IGD -->|"libgfxinit HDMI1"| HDMI["HDMI1 (Rear HDMI + Audio)"]
+    IGD -->|"libgfxinit + data.vbt"| VGA["VGA1 (D-Sub) & HDMI1 (Display + Audio)"]
     PEG -->|"Above-4G MMIO + VT-d DMAR"| PCIE1["PCIE1 x16 Slot (NVIDIA Tesla P4 01:00.0)"]
     SVID -->|"VR_VIDCLK / SOUT"| VRM["UP701 RT8876 (3+1 VRM) + UP751 RT9624"]
 
     CPU <-->|"DMI x4 Link"| PCH["Intel H61 Express PCH (BD82x6x 00:1f.0)"]
 
-    PCH -->|"00:1c.0 (RP4 -> RP01)"| LAN["Realtek RTL8111 02:00.0 (r8169 eno0 + WOL)"]
-    PCH -->|"00:1b.0 (< 4 GiB 0xdebfc000)"| HDA["ALC662 (AUDIO2 / HD_AUDIO1 / SPDIF) + HDMI Audio"]
+    PCH -->|"00:1c.0 RP1 / 00:1c.3 RP4"| PCIE2LAN["PCIE2 (Intel I226-V) & Realtek RTL8111 (r8169 eno0 + WOL)"]
+    PCH -->|"00:1b.0 (< 4 GiB)"| HDA["ALC662 (AUDIO2 / HD_AUDIO1 / SPDIF) + HDMI Audio"]
     PCH -->|"00:1f.2 (map 0x33)"| SATA["SATA_0 (P0), SATA_1 (P1), SATA_2 (P4), SATA_3 (P5)"]
-    PCH -->|"00:1a.0 / 00:1d.0"| USB["8x USB 2.0 Ports (0-5, 8-9, shared OC0#)"]
-    PCH -->|"SPI Bus"| SPI["U3 Socketed DIP-8 W25Q64 (8 MiB: IFD + ME + 6.5M BIOS / SMMSTORE)"]
-    PCH -->|"LPC Bus (GEN_PMCON_1=0x0a10)"| LPCTPM["18-pin LPC/TPM1 Header (Port 0x80 POST)"]
+    PCH -->|"00:1a.0 / 00:1d.0"| USB["8x USB 2.0 Ports + EDK2 DEL USB Boot Menu"]
+    PCH -->|"SPI Bus"| SPI["U3 Socketed DIP-8 W25Q32 (4M) / W25Q64 (8M)"]
+    PCH -->|"LPC Bus (GEN_PMCON_1=0x0a10, GCS.RPR=0)"| LPCTPM["18-pin LPC/TPM1 Header (Port 0x80 + TPM 0xfed40000)"]
     PCH -->|"LPC 0x2e / 0x290"| SIO["U1007 Nuvoton NCT6776F/D Super I/O"]
 
     SIO -->|"LDN 0x02 (0x3f8 IRQ 4)"| COM1["COM1 DB9 (115200 8N1 /dev/ttyS0)"]
-    SIO -.->|"LDN 0x01 (CR30=0x00)"| LPT1["LPT1 Disabled at Boot"]
+    SIO -->|"LDN 0x01 (0x378 IRQ 5 SPP)"| LPT1["LPT1 Header (PNP0400 /dev/parport0)"]
     SIO -->|"LDN 0x05 (0x60/0x64)"| PS2["PS/2 Keyboard & Mouse"]
     SIO -->|"LDN 0x0b (0x290 + CR 0xf7)"| HWM["SmartFan IV (CPU_FAN1 / CHA_FAN1) + S3 PLED- Blink"]
 ```
 
-<details>
-<summary><b>Click to expand ASCII Hardware-to-Software Topology Diagram</b></summary>
+---
 
-```text
-                           +---------------------------------------------------+
-                           |    2x 240-pin DDR3 UDIMM Slots                    |
-                           |    DDR3_A1 (SPD 0x50)  |  DDR3_B1 (SPD 0x52)      |
-                           +-------------------------+-------------------------+
-                                                     ^  SMBus 0x400 + Dual-Channel IMC
-                                                     v  (sandybridge/raminit_native.c)
-+---------------------------------------------------------------------------------------------------+
-|  Socket U1 (LGA1155) — Intel Xeon E3-1275 v2 / 2nd & 3rd Gen Core / Pentium / Celeron             |
-|  * IGD 00:02.0 (8086:016a, <4G 0xe0000000) --+-> PCH CRT/DAC ---> VGA1 (D-Sub, libgfxinit Analog) |
-|                                              +-> PCH DDPB    ---> HDMI1 (TMDS, libgfxinit HDMI1)  |
-|  * PEG10 00:01.0 (x16, CFG[6:5] on U1) --------> PCIE1 x16  ---> Add-in GPU / Tesla P4 (>4G)     |
-|  * Intel SVID Bus ------------------------------> UP701 (RT8876 3+1 VRM) + UP751 (RT9624 VAXG)     |
-|  * Single-Wire PECI (pin 115 on U1007) ---------> NCT6776F PECI Agent 0 (SmartFan IV + coretemp)   |
-+----------------------------------------------------+----------------------------------------------+
-                                                     | DMI Link
-                                                     v
-+---------------------------------------------------------------------------------------------------+
-|  Intel H61 Express PCH (BD82x6x, PCI 00:1f.0 ID 8086:1c5c)                                        |
-|  +-- 00:16.0 MEI1 (8086:1c3a, <4G) --------> Intel ME 8.1.20.1336 (FREG2 0x1000..0x17ffff)       |
-|  +-- 00:1a.0 EHCI2 / 00:1d.0 EHCI1 --------> USB 2.0 Ports 0-5, 8-9 (shared OC0#, S4 Wake *_PRW*) |
-|  +-- 00:1b.0 HD Audio (<4G) --> ALC662 (AUDIO2, HD_AUDIO1, SPDIF_OUT1, PCBEEP) + HDMI Audio (D3) |
-|  +-- 00:1c.0 PCIe RP4* (8086:1c16) -> 02:00.0 Realtek RTL8111 (10ec:8168) -> r8169 eno0 (WOL S4)  |
-|  +-- 00:1f.2 SATA AHCI (8086:1c02, map 0x33) -> SATA_0 (P0), SATA_1 (P1), SATA_2 (P4), SATA_3(P5) |
-|  +-- 00:1f.3 SMBus (8086:1c22, I/O 0x400) -> DDR3 SPD 0x50 / 0x52 (i2c_i801)                     |
-|  +-- 00:1f.0 SPI Bus -> Socketed DIP-8 U3 (W25Q64 8 MiB: IFD 4K + ME 1532K + BIOS 6.5 MiB)        |
-|  +-- 00:1f.0 LPC Bus (33 MHz CLK_PCH_PORT80 free-running: GEN_PMCON_1=0x0a10, LPC_EN=0x3c0b)      |
-|        +-- 18-pin LPC/TPM1 Header (Port 0x80 POST & optional discrete LPC TPM)                    |
-|        +-- U1007 NCT6776F/D Super I/O (PNP 0x2e, ID 0xc333, HWM 0x290)                            |
-|              +-- LDN 0x01 LPT1     : DISABLED at boot (CR 0x30=0x00, no PNP0400, no parport0)     |
-|              +-- LDN 0x02 COM1     : 0x3f8 IRQ4 -> U11 -> COM1 DB9 (/dev/ttyS0 115200 8N1)        |
-|              +-- LDN 0x05 KBC      : 0x60/0x64 IRQ1/12 -> PS/2 Keyboard & Mouse                   |
-|              +-- LDN 0x0b HWM/FLED : 0x290 -> CPU_FAN1 (Bank2), CHA_FAN1 (Bank1), PLED- (CR 0xf7) |
-+---------------------------------------------------------------------------------------------------+
-```
+## 4. Ready-to-Flash ROM Variants (`v26.11.3`, Blobs Included)
 
-</details>
+All 4 full ROM images are published under [**Releases (`v26.11.3`)**](../../releases/tag/v26.11.3), built from reproducible defconfigs in [`configs/`](configs/) with [`blobs/`](blobs/) (`IFD` with `FLMSTR1=0xffff0000`, `ME`, and desktop `data.vbt`), and verified with `ifdtool -d`, `me_cleaner.py -c` (`FTPR` RSA VALID), and `cbfstool`:
 
-### Hardware <-> Firmware <-> Linux Quick Reference
-
-| Physical Hardware / Connector | Hardware Address / Pin / Net | Coreboot File(s) | Linux Driver / Sysfs Interface |
-|---|---|---|---|
-| **SPI Flash `U3` (`W25Q64`, DIP-8)** | SPI (`ef 40 17`), IFD `4K` + ME `1532K` + BIOS `6.5M` | `board/Kconfig`, `SMMSTORE` `0x190000` | `flashrom -p internal -c "W25Q64BV/W25Q64CV/W25Q64FV" --ifd -i bios` |
-| **COM1 Serial (`U1007` `LDN 0x02` + `U11`)** | I/O `0x3f8`, IRQ `4`, global `CR 0x2a=0x60` | `devicetree.cb` (`2e.2`), `early_init.c` | `/dev/ttyS0` (`PNP0501`, `115200 8N1`) |
-| **Parallel Port `LPT1` (`U1007` `LDN 0x01`)** | **Disabled** (`CR 0x30=0x00`, `LPC_EN[2]=0`) | `devicetree.cb` (`2e.1 off`), `mainboard.c` | Disabled (`no PNP0400`, `no parport0`) |
-| **Front-Panel `PLED-`, Fans & Sensors** | `0x290`, `PECI0` (pin 115), `LDN 0x0b CR 0xf7` | `mainboard.c`, `smihandler.c`, `early_init.c` | `nct6775` (`/sys/class/hwmon/hwmon0`), `coretemp` |
-| **`PCIE1` (`x16`) & `CFG[6:5]` Straps** | `00:01.0` -> `01:00.0`, PEG lanes `0–15` | `cfr.c`, `northbridge.c`, `dsdt.asl` (`PEGP`) | `pcieport`, `nvidia` / IOMMU `DMAR` |
-| **Integrated Graphics (`VGA1` + `HDMI1`)** | `00:02.0` (`8086:016a`, `<4G 0xe0000000`) | `gma.c`, `gma-mainboard.ads`, `fb_console.c` | `i915` (`/dev/dri/card1`, `fb0`) |
-| **Realtek `RTL8111` GbE LAN & WOL** | `00:1c.0` (`8086:1c16`) -> `02:00.0` (`10ec:8168`) | `devicetree.cb` (`pcie_rp4`), `dsdt.asl` (`RP01`) | `r8169` (`eno0` DHCP, `ethtool wol`, `/proc/acpi/wakeup`) |
-| **HD Audio (`ALC662` + HDMI DDPB)** | `00:1b.0` (`<4G 0xdebfc000`), Codecs `0` & `3` | `hda_verb.c`, `bd82x6x/azalia.c` | `snd_hda_intel`, `snd_hda_codec_alc662` |
-| **UEFI CFR NVRAM Options (All 9 Runtime)** | GUID `ceae4c1d-335b-4685-a4a0-fc4a94eea085` | `cfr.c` (`CFR_OPTFLAG_RUNTIME`), `SMMSTORE` | `/sys/firmware/efi/efivars/*-ceae4c1d-...` |
-
-See [**`docs/HARDWARE-MAP.md`**](docs/HARDWARE-MAP.md) for the complete `U1` PEG pin table, `PCH GPIO 0..75` map, `U1007` pinout, and VRM chip mapping (`UP701`, `UP751`, `PU6`, `U1016`, `PTU3`, `U1018`).
+| Release Artifact (`*-full.rom`) | Flash Chip | Intel ME (`0x001000+`) | `AltMeDisable` | BIOS Offset / Size | CBFS Free Space | SHA-256 | Flash Notes |
+|---|---|---|---:|---|---:|---|---|
+| **`h61m-s1-plus-coreboot-v26.11.3-w25q64-8mb-minimal-me-full.rom`** | `W25Q64` (`8 MiB`) | `124 KiB` (`me_cleaner -S -r -t -d`) | **Yes (`1`)** | `0x020000` (`7.875 MiB`) | `5,949,604` B | `0db27e89b2cd8d723f3dea20264d59827cc507bca3afb1b9ccc0b4173dcbe3c9` | **Recommended (`8 MiB`)**: Flash once externally on `U3` (permanently unlocks IFD for future internal updates!) |
+| **`h61m-s1-plus-coreboot-v26.11.3-w25q64-8mb-mecleaned-compat-full.rom`** | `W25Q64` (`8 MiB`) | `1532 KiB` (`me_cleaner -S -d`) | Yes (`1`, IFD) | `0x180000` (`6.5 MiB`) | `4,507,748` B | `a4a54e31d1dd8c9d2edfad635e27a1e19000e02969c7cf088be5403fc2761d14` | **Live Hardware-Verified (`8 MiB`)**: Compatible with `flashrom -p internal --ifd -i bios` on locked stock IFD |
+| **`h61m-s1-plus-coreboot-v26.11.3-w25q32-4mb-minimal-me-full.rom`** | `W25Q32` (`4 MiB`) | `124 KiB` (`me_cleaner -S -r -t -d`) | **Yes (`1`)** | `0x020000` (`3.875 MiB`) | `1,755,300` B | `f295ae70e0bf4aa11bbd4a9cc377d9802b2985f7d9ae03628a30d642f1fa9038` | **Recommended (`4 MiB`)**: Flash once externally on `U3` to reclaim `3.875 MiB` BIOS + minimal ME |
+| **`h61m-s1-plus-coreboot-v26.11.3-w25q32-4mb-stock-me-full.rom`** | `W25Q32` (`4 MiB`) | Stock `8.1.20.1336` (`1532 KiB`) | No (`0`) | `0x180000` (`2.5 MiB`) | `313,444` B | `fe879af638e109b2065c218e7e941dcebf15bbbb6a69632daa084b711ee2786a` | Internal `flashrom --ifd -i bios` compatible on stock `4 MiB` `W25Q32` |
 
 ---
 
-## 4. Verified Hardware Status (`v26.11.2`)
+## 5. Verified Hardware Status (`v26.11.3`)
 
-Tested via internal `flashrom -p internal -c "W25Q64BV/W25Q64CV/W25Q64FV" --ifd -i bios --noverify-all` on physical ASRock H61M-S1 PLUS (`Intel Xeon E3-1275 v2`, 2× 8 GB DDR3, NVIDIA Tesla P4 in `PCIE1`, Ubuntu 26.04 `7.0.0-43-generic`):
+Tested via internal `flashrom -p internal -c "W25Q64BV/W25Q64CV/W25Q64FV" --ifd -i bios --noverify-all` (`w25q64-8mb-mecleaned-compat-full.rom`) on physical ASRock H61M-S1 PLUS (`Intel Xeon E3-1275 v2`, 2× 8 GB DDR3, NVIDIA Tesla P4 in `PCIE1`, Intel I226-V in `PCIE2`, Ubuntu 26.04 `7.0.0-43-generic`):
 
-| Subsystem | Observed Hardware Result (`v26.11.2`) |
+| Subsystem | Observed Hardware Result (`v26.11.3`) |
 |---|---|
-| **SPI Flash (`W25Q64`)** | `SF: Detected ef 4017` (`8 MiB`), `RW_MRC_CACHE` (`64 KiB`), `SMMSTORE` (`256 KiB` EFI FV), `COREBOOT` (`6.5 MiB`); `VERIFIED` internal flash |
-| **Serial & Super I/O (`NCT6776F`)** | `COM1` (`0x3f8` IRQ 4) end-to-end `115200 8N1` (`PNP: 002e.2 enabled`, `PNP0501`); **`LPT1` cleanly disabled** (`PNP: 002e.1 disabled`, `CR30=0x00`, `LPC_EN=0x3c0b`, zero `parport0`); `nct6775` SmartFan IV `Balanced` live |
-| **OS Runtime CFR (`efivarfs`)** | All **9 CFR options** exposed in `/sys/firmware/efi/efivars/*-ceae4c1d-335b-4685-a4a0-fc4a94eea085` (`0x00000007` `NV / BS / RT`), verified read/write round-trip + TUI smoke test via `h61_coreboot_config.py` |
-| **Memory** | Dual-channel `16 GiB` Kingston `99U5471-040.A00LF` at `666 MHz` (`1332 MT/s`, `1.5 V`, `CL9`); `CONFIG_NATIVE_RAMINIT_IGNORE_XMP_REQUESTED_VOLTAGE=y` enabled |
-| **IGD (`00:02.0`, `8086:016a`)** | `< 4 GiB` MMIO (`0xdec00000`/`0xe0000000`): **`libgfxinit` 4K `3840x2160` GOP**, `fb_console` on-screen POST/CBMEM log, EDK2 Setup on HDMI, **zero `i915` forcewake warnings** |
-| **Discrete GPU (`01:00.0`, Tesla P4)** | Retains **Above-4G BARs** (`0xfe0000000`/`0xff0000000`), `VT-d`/`DMAR` IOMMU Group 2, `nvidia_vgpu_vfio` MDEV active |
-| **Audio (`00:1b.0`, ALC662 + HDMI)** | `< 4 GiB` MMIO (`0xdebfc000`), `codec_mask = 09`: `Realtek ALC662 rev1` (`0x10ec0662`) + `Intel CougarPoint HDMI` (`0x80862805`) |
-| **Ethernet (`02:00.0`, RTL8111) & S3** | `r8169` (`eno0` DHCP), `RP01` `S4 *enabled` (`Supports Wake-on: pumbg`), `GEN_PMCON_1=0x0a10`, `LDN 0x0b CR 0xf7` S3 `0.5 Hz` `PLED-` blink |
+| **SPI Flash (`W25Q64`)** | `SF: Detected ef 4017` (`8 MiB`), `RW_MRC_CACHE` (`64 KiB`), `SMMSTORE` (`256 KiB` EFI FV), `COREBOOT` (`6.5 MiB` / `4.51 MB` free); `VERIFIED` internal flash (`FLASHROM_EXIT: 0`) |
+| **`Delete`-Key USB Boot Menu** | Live-verified via `COM5`: tapping **`Delete`** (`\x1b[3~`) during `5s` boot prompt (`Del to select USB Boot Device.`) opens **`Select USB Boot Device:`** (`Boot0001* USB Boot Menu`, `USB_ONLY`), `R` rescans USB, `ESC` resumes normal GRUB/Ubuntu boot cleanly |
+| **Serial & Parallel (`NCT6776F`)** | **`COM1`** (`0x3f8` IRQ 4, `PNP0501`) `115200 8N1` + **`LPT1`** (`0x378` IRQ 5 DRQ 4 SPP `CRf0=0x38`, `PNP0400`, `/dev/parport0`) **both enabled** (`0378-037a : parport0`, `03f8-03ff : serial`); `nct6775` SmartFan IV live |
+| **`LPC/TPM1` Port `0x80` & TPM Probe** | `LPC: GEN_PMCON_1=0x0a10 RCBA_GCS=0x00000c21 LPC_EN=0x3c0f LPC_IO_DEC=0x0010` (`RPR_Port80_PCI=0`, 33 MHz `CLK_PCH_PORT80` active), Coreboot + EDK2 (`0xE1..0xE8`) Port `0x80` POST; `pc80_tpm_probe` cleanly probes `0xfed40000` |
+| **OS Runtime CFR (`efivarfs`)** | All **10 CFR options** (including `me_state`) exposed in `/sys/firmware/efi/efivars/*-ceae4c1d-335b-4685-a4a0-fc4a94eea085` (`0x00000007`), `sudo h61-coreboot-config self-test` -> **`PASS`** |
+| **Intel ME Visibility in OS** | Coreboot `me_smm.c` (`RCBA32_OR(FD2, PCH_DISABLE_MEI1)`) hides PCI `00:16.0` before OS handoff (`lspci -s 00:16.0` empty!) |
+| **Memory, IGD, GPU, LAN, S3** | `16 GiB` dual-channel DDR3 `1332 MT/s CL9`; `00:02.0` (`<4G`) `libgfxinit` + `vbt.bin` **zero `i915` forcewake warnings**; `01:00.0` `Tesla P4` Above-4G + `DMAR` MDEV active; `I226-V` (`02:00.0`) + `RTL8111` (`03:00.0` `eno0`) active; S3 `PLED-` `0.5 Hz` blink |
 
 ---
 
-## 5. Configuring Coreboot from Linux TUI/CLI or UEFI Setup
+## 6. Configuring Coreboot from Linux TUI/CLI or UEFI Setup
 
 > [!TIP]
-> You can configure all 9 Coreboot BIOS options directly from a booted Linux OS (even headlessly over SSH or `COM1` serial) using [`scripts/h61_coreboot_config.py`](scripts/h61_coreboot_config.py), or at boot via the EDK2 UEFI Setup menu (`ESC`).
-
-### Method A: Directly from Linux (`h61_coreboot_config.py` TUI / CLI)
-No external dependencies required (pure Python 3 standard library). Install on the target host with `sudo install -m 0755 scripts/h61_coreboot_config.py /usr/local/bin/h61-coreboot-config`:
+> Configure all **10 Coreboot BIOS options** directly from Linux (headlessly over SSH or `COM1`) using [`scripts/h61_coreboot_config.py`](scripts/h61_coreboot_config.py), or at boot via **`ESC`** (Setup Option Menu) / **`Delete`** (`Select USB Boot Device:`):
 
 ```bash
-# Launch interactive 4-tab curses TUI (CFR Options, Power/Wake, Live Sensors, Backup/Flash)
-sudo h61-coreboot-config
+sudo install -m 0755 scripts/h61_coreboot_config.py /usr/local/bin/h61-coreboot-config
 
-# Scripted CLI commands
-sudo h61-coreboot-config self-test
-sudo h61-coreboot-config status
-sudo h61-coreboot-config list
+sudo h61-coreboot-config                   # Interactive 4-tab curses TUI
+sudo h61-coreboot-config self-test         # Verify 10 CFR efivars, COM1, LPT1, WOL, hwmon
+sudo h61-coreboot-config status            # Live system telemetry
+sudo h61-coreboot-config list              # List all 10 CFR options
 sudo h61-coreboot-config set fan_profile quiet
-sudo h61-coreboot-config set fb_debug_pause 3s
-sudo h61-coreboot-config set dram_max_speed 1600
-sudo h61-coreboot-config wol on
-sudo h61-coreboot-config backup my-cfr-profile.json
-sudo h61-coreboot-config s3 --seconds 15          # Handles NVIDIA procfs suspend automatically
-sudo h61-coreboot-config reboot-uefi --now        # Sets BootNext=Boot0000 & reboots to Setup
+sudo h61-coreboot-config s3 --seconds 15   # Safe S3 suspend with NVIDIA procfs handshake
+sudo h61-coreboot-config flash <full.rom>  # Safe internal 4M/8M '--ifd -i bios' flash
 ```
-
-### Method B: Pre-OS UEFI Setup (`ESC`)
-Press **`ESC`** during the `5s` EDK2 prompt -> **`Device Manager`** -> **`Coreboot Configuration`**:
-- **`System`**: `IGD UMA Size` (`gfx_uma_size`), `DRAM Max Frequency` (`dram_max_speed`), `PCIe x16 Slot Bifurcation` (`peg_bifurcation`), `Hyper-Threading`, `SATA Mode` (`sata_mode`), `NMI`.
-- **`Cooling & Display`**: `SmartFan IV Profile` (`fan_profile`: `Balanced`, `Quiet`, `Performance`, `Full Speed`), `Monitor Debug/POST Pause` (`fb_debug_pause`: `0s`, `3s`, `5s`, `10s`).
-- **`Power`**: `Restore AC Power Loss` (`power_on_after_fail`).
 
 ---
 
-## 6. Building & Assembling a Full 8 MiB Flashable ROM
+## 7. Building & Flashing Guide
 
-### Option 1: Download Pre-Built Release + Assemble with Your Stock Backup
-Download `h61m-s1-plus-coreboot-v26.11.2-bios-region-6.5mb-no-blobs.bin` from [**Releases**](../../releases), provide your own stock SPI dump (`4 MiB` or `8 MiB`), and run:
+### Option 1: Flash Pre-Built Public Release ROMs (`blobs/` Included)
+Download your target variant from [**Releases (`v26.11.3`)**](../../releases/tag/v26.11.3) and verify `SHA256SUMS.txt`:
+- **External SPI Programmer (Recommended once on socketed `U3`)**: Flash `h61m-s1-plus-coreboot-v26.11.3-w25q64-8mb-minimal-me-full.rom` (`W25Q64`) or `...-w25q32-4mb-minimal-me-full.rom` (`W25Q32`). Unlocks `FLMSTR1=0xffff0000` for future internal updates and activates `124 KiB` minimal ME + `AltMeDisable=1`.
+- **Internal `flashrom` from Linux (`FREG2` still vendor-locked)**:
+  ```bash
+  sudo flashrom -p internal -c "W25Q64BV/W25Q64CV/W25Q64FV" --ifd -i bios --noverify-all \
+    -w h61m-s1-plus-coreboot-v26.11.3-w25q64-8mb-mecleaned-compat-full.rom
+  ```
 
-```bash
-bash scripts/assemble_full_rom.sh \
-  --stock-dump your_stock_spi_backup.bin \
-  --bios-region h61m-s1-plus-coreboot-v26.11.2-bios-region-6.5mb-no-blobs.bin \
-  --out h61m-s1-plus-8mb-full.rom \
-  --me-cleaner /path/to/me_cleaner.py
-```
-
-- Add `--vbt your_extracted_data.vbt` to inject your desktop VBT (`vbt.bin`) into CBFS (pure `libgfxinit` works without VBT; adding VBT matches the hardware-tested build).
-- Omit `--me-cleaner` to keep the stock Intel ME untouched (`c9c21e31...`), or keep `--me-cleaner` to strip non-essential partitions and set `AltMeDisable`.
-
-### Option 2: Build From Source
-Inside `coreboot/coreboot-sdk:latest` or a host with Coreboot's Ada-enabled toolchain (`i386-elf-gnatbind`):
+### Option 2: Build All 4 Variants From Source
+Inside `coreboot/coreboot-sdk:latest` (or Ada-enabled Coreboot toolchain with `gnat`):
 
 ```bash
 git clone https://github.com/coreboot/coreboot.git
-COREBOOT_DIR="$PWD/coreboot" RELEASE_TAG="custom" bash scripts/build.sh
+cd coreboot && git checkout df45ea2c49b4c7f6a1d2a969934cf6c6a2cb9018
+cd ..
+COREBOOT_DIR="$PWD/coreboot" RELEASE_TAG="v26.11.3" bash scripts/build_all_roms.sh
 ```
+
+*(Or assemble custom stock dumps using [`scripts/assemble_full_rom.sh`](scripts/assemble_full_rom.sh) with `--stock-dump`, `--bios-region`, `--bios-offset`, `--rom-size`, `--vbt`, `--me-cleaner`.)*
 
 ---
 
-## 7. Repository Layout
+## 8. Repository Layout
 
 ```text
 .
-├── .agents/skills/                         # Sanitized AI agent skills & Win32 COM serial tools
-├── .github/workflows/quarterly-release.yml # Automated quarterly Coreboot + EDK2 release pipeline
+├── .agents/skills/                         # AI agent workflows & Win32 COM5 serial tools
+├── .github/workflows/quarterly-release.yml # Automated multi-variant CI build & release pipeline
 ├── LICENSES/                               # GPL-2.0, BSD-2-Clause-Patent, Intel Microcode licenses
-├── board/src/mainboard/asrock/h61m-s1-plus/# Coreboot mainboard port source files (C, ASL, Ada, Kconfig)
-├── configs/h61m-s1-plus-8mb.defconfig      # Reproducible 8 MiB Coreboot + EDK2 defconfig
-├── docs/                                   # Features catalog, CPU list, hardware map, lessons, report
-├── patches/                                # Sandy/Ivy Bridge <4G bus-0 MMIO clamp & NRI/PEG patch
+├── blobs/                                  # Committed IFD (4M/8M unlocked), ME (stock/compat/minimal-124k), & data.vbt
+├── board/src/mainboard/asrock/h61m-s1-plus/# Coreboot mainboard port (COM1+LPT1, LPC/TPM1, 10 CFR, SmartFan IV)
+├── configs/                                # 4 variant defconfigs (W25Q32 & W25Q64 stock/minimal-ME) + legacy 8mb
+├── docs/                                   # Features catalog, CPU list, hardware map, porting lessons, live report
+├── patches/
+│   ├── 0001-sandybridge-h61m-s1-plus-igd-raminit.patch  # <4G clamp, NRI/PEG, me_state CFR runtime flag
+│   └── 0002-edk2-delete-key-usb-boot-menu.patch         # EDK2 Del USB Boot Menu, PcAnsi ESC[3~ fix, BDS Port 0x80
 ├── scripts/
-│   ├── assemble_full_rom.sh                # Combines stock IFD + ME + 6.5 MiB Coreboot BIOS region
-│   ├── build.sh                            # Automated source build script
-│   └── h61_coreboot_config.py              # Linux OS runtime curses TUI & CLI configurator
-├── BLOBS.md                                # Firmware blob provenance, SHA-256 hashes & licenses
+│   ├── build_all_roms.sh                   # Builds & validates all 4 W25Q32/W25Q64 full ROMs + SHA256SUMS.txt
+│   ├── build.sh                            # Single-variant Coreboot + EDK2 builder & ifdtool/me_cleaner validator
+│   ├── assemble_full_rom.sh                # Stitches 4M/8M IFD + ME + BIOS region (+ optional VBT & me_cleaner)
+│   └── h61_coreboot_config.py              # Linux OS runtime 10-option CFR TUI & CLI configurator
+├── BLOBS.md                                # Blob provenance, SHA-256 hashes, & 124 KiB minimal-ME layout notes
 └── README.md                               # Project overview & software-to-hardware connection map
 ```

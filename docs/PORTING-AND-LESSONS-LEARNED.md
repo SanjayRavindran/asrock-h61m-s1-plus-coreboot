@@ -9,18 +9,19 @@
 [**Hardware Report**](HARDWARE-REPORT.md) ·
 [**Blobs & Licenses**](../BLOBS.md)
 
-This knowledge base consolidates every hardware discovery, boardview correlation, debugging breakthrough, and Linux integration pitfall uncovered while porting **Coreboot (`df45ea2c49b4`) + EDK2 `UefiPayloadPkg` (`f248a68be339`)** from a stock 4 MiB AMI Aptio `P1.10` BIOS to a verified **8 MiB** open-source firmware (`v26.11.2`).
+This knowledge base consolidates every hardware discovery, boardview correlation, debugging breakthrough, and Linux integration pitfall uncovered while porting **Coreboot (`df45ea2c49b4`) + EDK2 `UefiPayloadPkg` (`f248a68be339`)** from a stock 4 MiB AMI Aptio `P1.10` BIOS to verified **4 MiB (`W25Q32`) & 8 MiB (`W25Q64`)** open-source firmware releases (`v26.11.3`).
 
 > [!IMPORTANT]
-> **Top 3 Takeaways for Intel 6/7-Series (Sandy/Ivy Bridge + Cougar Point) Coreboot Ports**:
+> **Top 4 Takeaways for Intel 6/7-Series (Sandy/Ivy Bridge + Cougar Point) Coreboot Ports**:
 > 1. **Clamp Bus-0 Chipset 64-bit BARs `< 4 GiB`** whenever `CONFIG_ALWAYS_ALLOW_ABOVE_4G_ALLOCATION=y` is enabled (`gma.c`, `azalia.c`, `me.c`, `smbus.c`) because Coreboot's `x86_32` `ramstage` truncates `> 4 GiB` BARs into the `0xff800000` SPI flash window.
-> 2. **Move Super I/O Global Registers onto an Always-On LDN (`2e.2` COM1)** before disabling `LPT1` (`2e.1`), because Coreboot's `sconfig` skips all register writes inside `off` PnP devices.
-> 3. **Set `.flags = CFR_OPTFLAG_RUNTIME`** on all Coreboot CFR objects in `cfr.c` so EDK2 `CfrSetupMenuDxe` sets `EFI_VARIABLE_RUNTIME_ACCESS` (`0x00000007`), making BIOS settings readable and writable from Linux `/sys/firmware/efi/efivars/`.
+> 2. **Keep Super I/O Global Registers on `device pnp 2e.2` (COM1)** cleanly separated from `device pnp 2e.1` (`LPT1`), and keep `0x378` LPT POST writes removed when `LPT1` (`0x378` IRQ 5 `PNP0400`) is enabled so parallel hardware doesn't see POST traffic.
+> 3. **Set `.flags = CFR_OPTFLAG_RUNTIME`** on all Coreboot CFR objects (`cfr.c` + `bd82x6x/cfr.c`) so EDK2 `CfrSetupMenuDxe` sets `EFI_VARIABLE_RUNTIME_ACCESS` (`0x00000007`), making all 10 BIOS settings readable and writable from Linux `/sys/firmware/efi/efivars/`.
+> 4. **Preserve CRLF in EDK2 Patches & Match Short-Form USB Paths + VT220 `ESC[3~` in `PcAnsi`**: EDK2 upstream sources use CRLF line endings; `TerminalDxe` defaults to `TerminalTypePcAnsi`, which flushes `\x1b[3~` as `SCAN_ESC` unless extended alongside `TerminalTypeTtyTerm`!
 
 ## Table of Contents
 
 1. [Pre-Port Reconnaissance & Board Identity](#1-pre-port-reconnaissance--board-identity)
-2. [Critical Silicon & Firmware Bugs Solved (Bugs 1–7)](#2-critical-silicon--firmware-bugs-solved)
+2. [Critical Silicon & Firmware Bugs Solved (Bugs 1–12)](#2-critical-silicon--firmware-bugs-solved)
 3. [Linux OS & Tooling Lessons Learned (`h61`, Ubuntu `7.0.0-43-generic`)](#3-linux-os--tooling-lessons-learned-h61-ubuntu-700-43-generic)
 
 ---
@@ -66,7 +67,30 @@ This knowledge base consolidates every hardware discovery, boardview correlation
 - EDK2 `CfrSetupMenuDxe` (`SetupMenuCfr.c`) sets `EFI_VARIABLE_RUNTIME_ACCESS` **only** when Coreboot's option declares `.flags = CFR_OPTFLAG_RUNTIME`. Without it, `SMMSTORE` variables (`GUID ceae4c1d-335b-4685-a4a0-fc4a94eea085`) are invisible to Linux `/sys/firmware/efi/efivars/`. Adding `CFR_OPTFLAG_RUNTIME` in `cfr.c` and doing a fresh `--ifd -i bios` flash (clearing old `SMMSTORE` once) exposes all 9 `<opt>-ceae4c1d-...` variables cleanly (`0x00000007` = `NV|BS|RT`, 8 bytes `<II`). Linux's `efivarfs` sets `FS_IMMUTABLE_FL` (`----i----`), which must be cleared (`ioctl` / `chattr -i`) before atomic `os.write()` (`write_cfr_option` in `scripts/h61_coreboot_config.py`).
 
 ### Bug 7: `savedefconfig` Silently Dropping `# CONFIG_INTEL_GMA_ADD_VBT is not set`
-- Because `INTEL_GMA_HAVE_VBT` is selected in `board/Kconfig`, running `make savedefconfig` when `data.vbt` is enabled writes an `INTEL_GMA_ADD_VBT=y` config, whereas stripping `CONFIG_INTEL_GMA_ADD_VBT=y` *without* `# CONFIG_INTEL_GMA_ADD_VBT is not set` causes `olddefconfig` to re-enable it as the default! Public repo `configs/h61m-s1-plus-8mb.defconfig` explicitly keeps `# CONFIG_INTEL_GMA_ADD_VBT is not set`.
+- Because `INTEL_GMA_HAVE_VBT` is selected in `board/Kconfig`, running `make savedefconfig` when `data.vbt` is enabled writes `CONFIG_INTEL_GMA_ADD_VBT=y`, whereas omitting it without `# CONFIG_INTEL_GMA_ADD_VBT is not set` causes `olddefconfig` to re-enable it as the default! Since `v26.11.3` commits `blobs/data.vbt` and publishes complete ready-to-flash ROMs, all variant defconfigs explicitly enable `CONFIG_INTEL_GMA_ADD_VBT=y` (`scripts/build.sh` copies `blobs/data.vbt` automatically, or supports `VBT_FILE=none`).
+
+### Bug 8: EDK2 `BootManagerMenuApp` Zero-Item `ASSERT` & Short-Form USB Boot Paths
+- Upstream `MdeModulePkg/Application/BootManagerMenuApp/BootManagerMenu.c` assumes `ItemCount > 0` (`LastItem = ItemCount - 1`) and `Option->FilePath` matches uniformly. When building a dedicated `Delete`-key **`USB_ONLY` Boot Menu** (`patches/0002-edk2-delete-key-usb-boot-menu.patch`):
+  1. Installed UEFI OS entries on USB sticks often use short-form `MEDIA_HARDDRIVE_DP` `Boot####` paths lacking `MSG_USB_DP` nodes! `IsUsbBootOption()` must cross-reference `gEfiBlockIoProtocolGuid` handles (`FindHardDriveNode()`) so both raw USB device entries and installed USB GPT/ESP OS entries appear reliably — and always open `"Select USB Boot Device:"` even when only **1** or **> 1** USB bootable disks exist.
+  2. When 0 USB bootable disks are attached, setting `HasBootableItems = FALSE` and populating row 0 with `"No bootable USB devices found."` prevents an assertion/hang and allows `R` (rescan) or `ESC` (cancel and continue boot).
+
+### Bug 9: EDK2 `TerminalConIn.c` `PcAnsi` Turning VT220 `Delete` (`\x1b[3~`) into `SCAN_ESC`
+- `UefiPayloadPkg/UefiPayloadPkg.dsc` sets `DEFINE DEFAULT_TERMINAL_TYPE = 0` (`TerminalTypePcAnsi` via `gPcAnsiTerminal`).
+- In `MdeModulePkg/Universal/Console/TerminalDxe/TerminalConIn.c`, VT220 `ESC [ 3 ~` (`\x1b[3~`) is gated strictly behind `TerminalDevice->TerminalType == TerminalTypeTtyTerm`. Under `TerminalTypePcAnsi`, receiving `ESC [ 3` hits `UnicodeToEfiKeyFlushState()`, which flushes the leading `ESC` byte into the key FIFO as **`SCAN_ESC`** — causing `Delete` over serial terminals (`COM5`, PuTTY, minicom, xterm) to open `UiApp` Setup instead of `USB Boot Menu`!
+- Extending the two `TerminalTypeTtyTerm` guards in `TerminalConIn.c` (`INPUT_STATE_ESC | INPUT_STATE_LEFTOPENBRACKET` and `INPUT_STATE_LEFTOPENBRACKET_TTY`) to allow **`TerminalTypePcAnsi` || `TerminalTypeTtyTerm`** makes VT220 `\x1b[3~`, ASCII `0x7f`, `ESC [ X`, AND physical PS/2 + USB keyboards all decode cleanly to `SCAN_DELETE`.
+
+### Bug 10: EDK2 Patch CRLF Line-Ending Fragility
+- `mrchromebox/edk2` files use **CRLF (`\r\n`)** line endings. Converting `patches/0002-edk2-delete-key-usb-boot-menu.patch` to Unix LF during Windows-to-Linux sync breaks `git apply --check`. Preserve `.patch` files as raw unmodified bytes in SFTP sync and Git (never strip `\r`).
+
+### Bug 11: `me_cleaner.py` In-Place Mutation & 64 KiB Alignment for `124 KiB` Minimal ME
+- Invoking `util/me_cleaner/me_cleaner.py` **without `-O <out>`** mutates the input file in-place (nearly corrupting backups if run directly on `inputs/`). **Rule**: Always lock master stock dumps read-only (`chmod 400`/`444`) and copy to `/tmp` (`chmod 644`) before running `me_cleaner.py -O ...`.
+- H61 (`Cougar Point`) hardware trips Intel ME's 30-minute power-off watchdog if zero `FTPR` (`ROMP` + `BUP`) exists. `me_cleaner.py -S -r -t -d` produces a `96 KiB` (`0x18000`) relocated `FTPR` image; padding with `0xff` to **`126,976` B (`0x1f000`)** places `FREG1` (`BIOS`) cleanly on a 64 KiB Coreboot FMAP boundary (`0x020000`) with `FLREG2=0x001f0001` and `AltMeDisable=1`.
+
+### Bug 12: Cougar Point H61 (`ME_GEN_7`) + ME `8.1.20.1336` (`me_state` vs `me_smm` vs `AltMeDisable`)
+- Although ASRock's Ivy Bridge stock BIOS pairs H61 (`Cougar Point`, `8086:1c5c`, PCH `ME_GEN_7` in `bd82x6x/me.h`) with **ME `8.1.20.1336`** (`MBP`-based instead of ME 7 MKHI):
+  1. Setting runtime CFR `me_state=1` (`Disabled / Soft Temp Disable`) in a locked stock-IFD boot triggers Coreboot's ME 7 MKHI `enter_soft_temp_disable()` call, logging `ME: response is not complete` / `failed to enter Soft Temporary Disable mode` (~1.3s stall).
+  2. Regardless, Coreboot's SMM (`me_smm.c`: `RCBA32_OR(FD2, PCH_DISABLE_MEI1)`) hides PCI `00:16.0` from Linux before OS handoff (`lspci -s 00:16.0` empty!).
+  3. **Takeaway**: Keep `me_state=0` (`Normal`) when running stock `FREG2`; use external SPI programming with `w25q64-8mb-minimal-me-full.rom` (`124 KiB` stripped ME + `AltMeDisable=1` + `FLMSTR1=0xffff0000`) for physical hardware ME disabling + permanent full-chip internal flashing.
 
 ---
 

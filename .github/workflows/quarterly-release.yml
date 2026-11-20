@@ -5,6 +5,7 @@ on:
     branches:
       - main
     paths:
+      - 'blobs/**'
       - 'board/**'
       - 'configs/**'
       - 'patches/**'
@@ -73,15 +74,15 @@ jobs:
             3rdparty/libhwbase \
             3rdparty/vboot
 
-      - name: Build ASRock H61M-S1 PLUS 8 MiB BIOS region
+      - name: Build ASRock H61M-S1 PLUS W25Q32 & W25Q64 ROMs
         env:
           COREBOOT_DIR: ${{ github.workspace }}/coreboot
           RELEASE_TAG: ${{ steps.meta.outputs.release_tag }}
           OUT_DIR: ${{ github.workspace }}/release-out
         run: |
-          bash scripts/build.sh
-          cp -f configs/h61m-s1-plus-8mb.defconfig release-out/
+          bash scripts/build_all_roms.sh
           cp -f patches/0001-sandybridge-h61m-s1-plus-igd-raminit.patch release-out/
+          cp -f patches/0002-edk2-delete-key-usb-boot-menu.patch release-out/
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -117,26 +118,22 @@ jobs:
           import os
           tag = os.environ["REL_TAG"]
           ref = os.environ["CB_REF"]
-          print(f"""## ASRock H61M-S1 PLUS — Quarterly Coreboot + EDK2 Release (`{tag}`)
+          print(f"""## ASRock H61M-S1 PLUS — Coreboot + EDK2 Release (`{tag}`)
 
-          Automated quarterly Coreboot BIOS-region build tracking upstream Coreboot release `{ref}` with EDK2 `UefiPayloadPkg`.
+          Automated quarterly Coreboot + EDK2 `UefiPayloadPkg` build tracking upstream Coreboot `{ref}`.
 
-          ### Included Open-Source Assets
-          - `h61m-s1-plus-coreboot-{tag}-8mb-bios-region.bin` (6.5 MiB `0x180000..0x7fffff` BIOS region, built without proprietary ASRock `vbt.bin`, IFD, or ME)
-          - `cbfs-layout.txt` (CBFS & FMAP verification output)
-          - `h61m-s1-plus-8mb.defconfig` & `0001-sandybridge-h61m-s1-plus-igd-raminit.patch`
+          ### Ready-to-Flash Full SPI ROM Images (Include Unlocked IFD, ME & Desktop VBT)
+          - `h61m-s1-plus-coreboot-{tag}-w25q64-8mb-minimal-me-full.rom` (**8 MiB `W25Q64`, Recommended for External SPI**: `124 KiB` relocated `me_cleaner -S -r -t -d` ME + `AltMeDisable=1` + `7.875 MiB` BIOS)
+          - `h61m-s1-plus-coreboot-{tag}-w25q64-8mb-mecleaned-compat-full.rom` (**8 MiB `W25Q64`, Internal `flashrom --ifd -i bios` Compatible**: `1532 KiB` `me_cleaner -S -d` ME + `6.5 MiB` BIOS at `0x180000`)
+          - `h61m-s1-plus-coreboot-{tag}-w25q32-4mb-minimal-me-full.rom` (**4 MiB `W25Q32`, Minimal ME**: `124 KiB` relocated `me_cleaner -S -r -t -d` ME + `AltMeDisable=1` + `3.875 MiB` BIOS)
+          - `h61m-s1-plus-coreboot-{tag}-w25q32-4mb-stock-me-full.rom` (**4 MiB `W25Q32`, Stock ME**: Stock ME `8.1.20.1336` + `2.5 MiB` LZMA BIOS at `0x180000`)
+
+          ### Included Supporting Assets
+          - Per-variant BIOS-region slices (`*-bios-region.bin`), `cbfs-layout-*.txt`, `*.defconfig`
+          - `0001-sandybridge-h61m-s1-plus-igd-raminit.patch` & `0002-edk2-delete-key-usb-boot-menu.patch`
           - `SHA256SUMS.txt`
 
-          ### Assembling a Complete 8 MiB Flashable ROM
-          Provide your own stock SPI dump (4 KiB IFD + Intel ME) and optionally your extracted desktop VBT + `me_cleaner`:
-          ```bash
-          bash scripts/assemble_full_rom.sh \\
-            --stock-dump stock_backup.bin \\
-            --bios-region h61m-s1-plus-coreboot-{tag}-8mb-bios-region.bin \\
-            --out h61m-s1-plus-coreboot-{tag}-8mb-full.rom \\
-            --me-cleaner /path/to/me_cleaner.py
-          ```
-          See [`BLOBS.md`](BLOBS.md) and [`README.md`](README.md) for blob provenance, hardware test scope, and risk/LLM disclaimers.""")
+          See [`BLOBS.md`](BLOBS.md) and [`README.md`](README.md) for flashing instructions, hardware test logs, and disclaimers.""")
           PY
           gh release create "$REL_TAG" release-out/* \
             --title "ASRock H61M-S1 PLUS Coreboot ${REL_TAG} (upstream ${CB_REF})" \

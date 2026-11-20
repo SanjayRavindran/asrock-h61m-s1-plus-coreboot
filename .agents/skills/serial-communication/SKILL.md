@@ -2,10 +2,10 @@
 name: serial-communication
 description: >-
   Capture Coreboot, EDK2, and Linux serial console boot logs, send keystrokes
-  (such as ESC for UEFI setup), and run non-interactive UART shell commands or
-  diagnostics between ASRock H61M-S1 PLUS COM1 (0x3f8) and Windows COM5 (CH340).
-  Use this skill whenever flashing, booting, debugging serial output, or
-  executing commands over COM5 on the H61M-S1 PLUS board.
+  (ESC for UEFI setup, Delete for USB Boot Menu), and run non-interactive UART
+  shell commands or diagnostics between ASRock H61M-S1 PLUS COM1 (0x3f8) and
+  Windows COM5 (CH340). Use this skill whenever flashing, booting, debugging
+  serial output, or executing commands over COM5 on the H61M-S1 PLUS board.
 ---
 
 # Serial Communication for ASRock H61M-S1 PLUS
@@ -14,7 +14,7 @@ Use [com_serial.py](./scripts/com_serial.py) for boot-log captures and keystroke
 
 ## Hardware & Wiring Topology
 
-- **Target Board**: ASRock H61M-S1 PLUS (`h61`, Ubuntu DHCP on `eno0` at `<target-ip>`)
+- **Target Board**: ASRock H61M-S1 PLUS (`h61`, Ubuntu DHCP on `eno0` at `192.168.1.24`)
   - Super I/O: Nuvoton `NCT6776F/D` (`0x2e`), `COM1` (`LDN 0x02`) at `0x3f8`, IRQ 4 (`/dev/ttyS0` in Linux)
   - Connector: Motherboard DB9 header `COM1` behind RS-232 line driver `U11`
 - **Windows Workstation**: `COM5` (`USB-SERIAL CH340`, `USB\VID_1A86&PID_7523`, `wch.cn` driver `3.9.2024.9`)
@@ -60,19 +60,23 @@ Key design details and traps already handled by [serial_exec.py](./scripts/seria
    python ".agents/skills/serial-communication/scripts/com_serial.py" --port COM5 capture --duration 90 --purge --outfile "outputs/coreboot-bootlog.txt"
    ```
 
-3. **Enter EDK2 Boot Manager / Coreboot CFR Setup (`ESC`)**:
+3. **Enter EDK2 Boot Manager / Coreboot CFR Setup (`ESC`) or USB Boot Menu (`Delete`)**:
    ```powershell
+   # Enter EDK2 UiApp Setup (ESC)
    python ".agents/skills/serial-communication/scripts/com_serial.py" --port COM5 capture --duration 60 --send-esc-on-boot --outfile "outputs/coreboot-setup.txt"
-   ```
-   Or send bursts: `python ".agents/skills/serial-communication/scripts/com_serial.py" --port COM5 send --esc --repeat 10 --read-wait 3`.
 
-4. **Two-way UART verification while Ubuntu is booted (`<target-ip>`)**:
+   # Trigger Delete-key USB Boot Menu ("Select USB Boot Device:") via VT220 ESC[3~
+   python ".agents/skills/serial-communication/scripts/com_serial.py" --port COM5 capture --duration 60 --send-del-on-boot --outfile "outputs/usb-boot-menu.txt"
+   ```
+   Or send bursts manually: `python ".agents/skills/serial-communication/scripts/com_serial.py" --port COM5 send --esc --repeat 3 --read-wait 2` (or `--del` to send `\x1b[3~`). *(Note: EDK2 `v26.11.3` extends `TerminalConIn.c` `TerminalTypePcAnsi` to decode VT220 `\x1b[3~` directly to `SCAN_DELETE` without falling back to `SCAN_ESC`.)*
+
+4. **Two-way UART verification while Ubuntu is booted (`192.168.1.24`)**:
    ```powershell
-   python ".agents/skills/serial-communication/scripts/com_serial.py" --port COM5 loopback-test --host <target-ip> --user zero --password <password>
+   python ".agents/skills/serial-communication/scripts/com_serial.py" --port COM5 loopback-test --host 192.168.1.24 --user zero --password sanjay
    ```
 
 ## Validation Checklist
 
 - `status` prints `OPEN=OK baud=115200` with `CTS=True DSR=True` when the board is powered on.
-- Captured Coreboot `v26.11.2` logs show `bootblock` -> `romstage` (`SF: Detected ef 4017 ... 0x800000` on 8 MiB `W25Q64`, native DDR3 init) -> `ramstage` (`PNP: 002e.1: enabled 0` LPT1 off, `PNP: 002e.2: enabled 1` COM1 on, `azalia_audio`, `Nuvoton HWM`, `ACPI: * DMAR`, `FB_CONSOLE`) -> `UEFIPAYLOAD.fd`.
+- Captured Coreboot `v26.11.3` logs show `bootblock` -> `romstage` (`SF: Detected ef 4017 ... 0x800000` on 8 MiB `W25Q64`, native DDR3 init) -> `ramstage` (`PNP: 002e.1: enabled 1` LPT1 on, `PNP: 002e.2: enabled 1` COM1 on, `pc80_tpm_probe`, `LPC: GEN_PMCON_1=0x0a10 RCBA_GCS=0x00000c21 LPC_EN=0x3c0f LPC_IO_DEC=0x0010`, `azalia_audio`, `Nuvoton HWM`, `ACPI: * DMAR`, `FB_CONSOLE`) -> `UEFIPAYLOAD.fd` (`Del to select USB Boot Device.`).
 - `serial_exec.py` exits `0` without `[WARNING: timed out ...]` and restores `stty echo`.

@@ -13,11 +13,17 @@
 #define ACPI_DEV	PNP_DEV(0x2e, NCT6776_ACPI)
 #define HWM_DEV		PNP_DEV(0x2e, NCT6776_HWM_FPLED)
 
-/* Ensure Parallel Port (LPT1, LDN 0x01) stays disabled at boot */
-static void lpt_disable(void)
+/* Enable Parallel Port (LPT1, LDN 0x01) at 0x378 IRQ 5 SPP mode */
+static void lpt_setup(void)
 {
 	pnp_set_logical_device(PP_DEV);
 	pnp_write_config(PP_DEV, 0x30, 0x00);
+	pnp_write_config(PP_DEV, 0x60, 0x03);
+	pnp_write_config(PP_DEV, 0x61, 0x78);
+	pnp_write_config(PP_DEV, 0x70, 0x05);
+	pnp_write_config(PP_DEV, 0x74, 0x04);	/* no DMA */
+	pnp_write_config(PP_DEV, 0xf0, 0x38);
+	pnp_write_config(PP_DEV, 0x30, 0x01);
 }
 
 static void sio_pinmux_setup(void)
@@ -54,7 +60,7 @@ void bootblock_mainboard_early_init(void)
 	nuvoton_pnp_enter_conf_state(SIO_BASE);
 
 	sio_pinmux_setup();
-	lpt_disable();
+	lpt_setup();
 	sio_pled_steady_on();
 
 	/* LDN 0x0a: ACPI routing/power-loss defaults */
@@ -71,13 +77,13 @@ void bootblock_mainboard_early_init(void)
 #if defined(__ROMSTAGE__)
 /*
  * Super I/O logical devices are reset by LRESET#/PLTRST# (including after CF9
- * or S3 resume), so keep LPT1 disabled and re-assert pin-muxing and PLED-.
+ * or S3 resume), so keep LPT1 enabled and re-assert pin-muxing and PLED-.
  */
 void mainboard_early_init(bool s3resume)
 {
 	nuvoton_pnp_enter_conf_state(SIO_BASE);
 	sio_pinmux_setup();
-	lpt_disable();
+	lpt_setup();
 	sio_pled_steady_on();
 	nuvoton_pnp_exit_conf_state(SIO_BASE);
 }

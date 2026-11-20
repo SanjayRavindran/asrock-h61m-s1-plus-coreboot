@@ -31,5 +31,5 @@ Load the specific reference file matching your task:
 - Complete software-to-hardware connection map (boardview, GPIOs, Super I/O, VRMs): [`docs/HARDWARE-MAP.md`](../../../docs/HARDWARE-MAP.md)
 - Supported LGA1155 CPUs & microcode guide: [`docs/SUPPORTED-CPUS.md`](../../../docs/SUPPORTED-CPUS.md)
 - Coreboot software & hardware feature catalog: [`docs/COREBOOT-FEATURES-CATALOG.md`](../../../docs/COREBOOT-FEATURES-CATALOG.md)
-- Historical H61M-S1 PLUS evidence dossier & boardview pinouts: [`H61M-S1+/bios_porting_documentation.md`](../../../docs/PORTING-AND-LESSONS-LEARNED.md)
-- Current post-hardware bring-up report: [`docs/HARDWARE-REPORT.md`](../../../docs/HARDWARE-REPORT.md) and [`H61M-S1-PLUS-COREBOOT-REPORT.md`](../../../docs/HARDWARE-REPORT.md)
+- Historical H61M-S1 PLUS evidence dossier & boardview pinouts: [`H61M-S1+/bios_porting_documentation.md`](../../../H61M-S1+/bios_porting_documentation.md)
+- Current post-hardware bring-up report: [`docs/HARDWARE-REPORT.md`](../../../docs/HARDWARE-REPORT.md) and [`H61M-S1-PLUS-COREBOOT-REPORT.md`](../../../H61M-S1-PLUS-COREBOOT-REPORT.md)

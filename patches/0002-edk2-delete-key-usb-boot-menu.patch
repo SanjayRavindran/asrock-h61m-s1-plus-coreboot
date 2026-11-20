@@ -1,0 +1,686 @@
+diff --git a/MdeModulePkg/Application/BootManagerMenuApp/BootManagerMenu.c b/MdeModulePkg/Application/BootManagerMenuApp/BootManagerMenu.c
+index 5bba6ea816..eb2396239a 100644
+--- a/MdeModulePkg/Application/BootManagerMenuApp/BootManagerMenu.c
++++ b/MdeModulePkg/Application/BootManagerMenuApp/BootManagerMenu.c
+@@ -364,33 +364,161 @@ IgnoreBootOption (
+   @retval  EFI_INVALID_PARAMETER  Input parameter is invalid.
+ 
+ **/
++STATIC
++BOOLEAN
++IsUsbDevicePath (
++  IN EFI_DEVICE_PATH_PROTOCOL  *DevicePath
++  )
++{
++  EFI_DEVICE_PATH_PROTOCOL  *Node;
++
++  if (DevicePath == NULL) {
++    return FALSE;
++  }
++
++  for (Node = DevicePath; !IsDevicePathEnd (Node); Node = NextDevicePathNode (Node)) {
++    if ((DevicePathType (Node) == MESSAGING_DEVICE_PATH) &&
++        ((DevicePathSubType (Node) == MSG_USB_DP) ||
++         (DevicePathSubType (Node) == MSG_USB_CLASS_DP) ||
++         (DevicePathSubType (Node) == MSG_USB_WWID_DP)))
++    {
++      return TRUE;
++    }
++  }
++
++  return FALSE;
++}
++
++STATIC
++HARDDRIVE_DEVICE_PATH *
++FindHardDriveNode (
++  IN EFI_DEVICE_PATH_PROTOCOL  *DevicePath
++  )
++{
++  EFI_DEVICE_PATH_PROTOCOL  *Node;
++
++  if (DevicePath == NULL) {
++    return NULL;
++  }
++
++  for (Node = DevicePath; !IsDevicePathEnd (Node); Node = NextDevicePathNode (Node)) {
++    if ((DevicePathType (Node) == MEDIA_DEVICE_PATH) &&
++        (DevicePathSubType (Node) == MEDIA_HARDDRIVE_DP))
++    {
++      return (HARDDRIVE_DEVICE_PATH *)Node;
++    }
++  }
++
++  return NULL;
++}
++
++STATIC
++BOOLEAN
++IsUsbBootOption (
++  IN EFI_BOOT_MANAGER_LOAD_OPTION  *BootOption
++  )
++{
++  EFI_STATUS                Status;
++  UINTN                     HandleCount;
++  EFI_HANDLE                *HandleBuffer;
++  UINTN                     Index;
++  EFI_DEVICE_PATH_PROTOCOL  *HandleDp;
++  HARDDRIVE_DEVICE_PATH     *OptHd;
++  HARDDRIVE_DEVICE_PATH     *HandleHd;
++
++  if ((BootOption == NULL) || (BootOption->FilePath == NULL)) {
++    return FALSE;
++  }
++
++  if (IsUsbDevicePath (BootOption->FilePath)) {
++    return TRUE;
++  }
++
++  OptHd = FindHardDriveNode (BootOption->FilePath);
++  if (OptHd == NULL) {
++    return FALSE;
++  }
++
++  HandleCount  = 0;
++  HandleBuffer = NULL;
++  Status       = gBS->LocateHandleBuffer (
++                        ByProtocol,
++                        &gEfiBlockIoProtocolGuid,
++                        NULL,
++                        &HandleCount,
++                        &HandleBuffer
++                        );
++  if (EFI_ERROR (Status) || (HandleBuffer == NULL)) {
++    return FALSE;
++  }
++
++  for (Index = 0; Index < HandleCount; Index++) {
++    Status = gBS->HandleProtocol (
++                    HandleBuffer[Index],
++                    &gEfiDevicePathProtocolGuid,
++                    (VOID **)&HandleDp
++                    );
++    if (EFI_ERROR (Status) || !IsUsbDevicePath (HandleDp)) {
++      continue;
++    }
++
++    HandleHd = FindHardDriveNode (HandleDp);
++    if ((HandleHd != NULL) &&
++        (HandleHd->PartitionNumber == OptHd->PartitionNumber) &&
++        (HandleHd->MBRType == OptHd->MBRType) &&
++        (HandleHd->SignatureType == OptHd->SignatureType) &&
++        (CompareMem (HandleHd->Signature, OptHd->Signature, sizeof (HandleHd->Signature)) == 0))
++    {
++      FreePool (HandleBuffer);
++      return TRUE;
++    }
++  }
++
++  FreePool (HandleBuffer);
++  return FALSE;
++}
++
+ EFI_STATUS
+ InitializeBootMenuData (
+   IN   EFI_BOOT_MANAGER_LOAD_OPTION  *BootOption,
+   IN   UINTN                         BootOptionCount,
++  IN   BOOLEAN                       UsbOnlyMode,
+   OUT  BOOT_MENU_POPUP_DATA          *BootMenuData
+   )
+ {
+   UINTN  Index;
+   UINTN  StrIndex;
++  UINTN  SlotCount;
+ 
+-  if ((BootOption == NULL) || (BootMenuData == NULL)) {
++  if (BootMenuData == NULL) {
+     return EFI_INVALID_PARAMETER;
+   }
+ 
+-  BootMenuData->TitleToken[0] = STRING_TOKEN (STR_BOOT_POPUP_MENU_TITLE_STRING);
+-  BootMenuData->PtrTokens     = AllocateZeroPool (BootOptionCount * sizeof (EFI_STRING_ID));
++  ZeroMem (BootMenuData, sizeof (*BootMenuData));
++  SlotCount                   = (BootOptionCount > 0) ? BootOptionCount : 1;
++  BootMenuData->UsbOnlyMode   = UsbOnlyMode;
++  BootMenuData->TitleToken[0] = UsbOnlyMode
++                                ? STRING_TOKEN (STR_USB_BOOT_MENU_TITLE_STRING)
++                                : STRING_TOKEN (STR_BOOT_POPUP_MENU_TITLE_STRING);
++  BootMenuData->PtrTokens     = AllocateZeroPool (SlotCount * sizeof (EFI_STRING_ID));
++  BootMenuData->OptionMap     = AllocateZeroPool (SlotCount * sizeof (UINTN));
+   ASSERT (BootMenuData->PtrTokens != NULL);
++  ASSERT (BootMenuData->OptionMap != NULL);
+ 
+   //
+   // Skip boot option which created by BootNext Variable
+   //
+-  for (StrIndex = 0, Index = 0; Index < BootOptionCount; Index++) {
++  for (StrIndex = 0, Index = 0; (BootOption != NULL) && (Index < BootOptionCount); Index++) {
+     if (IgnoreBootOption (&BootOption[Index])) {
+       continue;
+     }
+ 
++    if (UsbOnlyMode && !IsUsbBootOption (&BootOption[Index])) {
++      continue;
++    }
++
+     ASSERT (BootOption[Index].Description != NULL);
++    BootMenuData->OptionMap[StrIndex]   = Index;
+     BootMenuData->PtrTokens[StrIndex++] = HiiSetString (
+                                             gStringPackHandle,
+                                             0,
+@@ -399,10 +527,26 @@ InitializeBootMenuData (
+                                             );
+   }
+ 
+-  BootMenuData->ItemCount    = StrIndex;
+-  BootMenuData->HelpToken[0] = STRING_TOKEN (STR_BOOT_POPUP_MENU_HELP1_STRING);
+-  BootMenuData->HelpToken[1] = STRING_TOKEN (STR_BOOT_POPUP_MENU_HELP2_STRING);
+-  BootMenuData->HelpToken[2] = STRING_TOKEN (STR_BOOT_POPUP_MENU_HELP3_STRING);
++  if (StrIndex == 0) {
++    BootMenuData->HasBootableItems = FALSE;
++    BootMenuData->PtrTokens[0]     = UsbOnlyMode
++                                     ? STRING_TOKEN (STR_USB_BOOT_MENU_EMPTY_STRING)
++                                     : HiiSetString (gStringPackHandle, 0, L"No boot options found.", NULL);
++    StrIndex                       = 1;
++  } else {
++    BootMenuData->HasBootableItems = TRUE;
++  }
++
++  BootMenuData->ItemCount = StrIndex;
++  if (UsbOnlyMode) {
++    BootMenuData->HelpToken[0] = STRING_TOKEN (STR_USB_BOOT_MENU_HELP1_STRING);
++    BootMenuData->HelpToken[1] = STRING_TOKEN (STR_USB_BOOT_MENU_HELP2_STRING);
++    BootMenuData->HelpToken[2] = STRING_TOKEN (STR_USB_BOOT_MENU_HELP3_STRING);
++  } else {
++    BootMenuData->HelpToken[0] = STRING_TOKEN (STR_BOOT_POPUP_MENU_HELP1_STRING);
++    BootMenuData->HelpToken[1] = STRING_TOKEN (STR_BOOT_POPUP_MENU_HELP2_STRING);
++    BootMenuData->HelpToken[2] = STRING_TOKEN (STR_BOOT_POPUP_MENU_HELP3_STRING);
++  }
+   InitializeBootMenuScreen (BootMenuData);
+   BootMenuData->SelectItem = 0;
+   return EFI_SUCCESS;
+@@ -736,23 +880,22 @@ VOID
+ BootFromSelectOption (
+   IN   EFI_BOOT_MANAGER_LOAD_OPTION  *BootOptions,
+   IN   UINTN                         BootOptionCount,
+-  IN   UINTN                         SelectItem
++  IN   BOOT_MENU_POPUP_DATA          *BootMenuData
+   )
+ {
+-  UINTN  ItemNum;
+-  UINTN  Index;
++  UINTN  RealIndex;
+ 
+-  ASSERT (BootOptions != NULL);
++  if ((BootOptions == NULL) || (BootMenuData == NULL) || !BootMenuData->HasBootableItems) {
++    return;
++  }
+ 
+-  for (ItemNum = 0, Index = 0; Index < BootOptionCount; Index++) {
+-    if (IgnoreBootOption (&BootOptions[Index])) {
+-      continue;
+-    }
++  if (BootMenuData->SelectItem >= BootMenuData->ItemCount) {
++    return;
++  }
+ 
+-    if (ItemNum++ == SelectItem) {
+-      EfiBootManagerBoot (&BootOptions[Index]);
+-      break;
+-    }
++  RealIndex = BootMenuData->OptionMap[BootMenuData->SelectItem];
++  if (RealIndex < BootOptionCount) {
++    EfiBootManagerBoot (&BootOptions[RealIndex]);
+   }
+ }
+ 
+@@ -1006,6 +1149,22 @@ BootManagerMenuEntry (
+   EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL  *SimpleTextOut;
+   UINTN                            BootTextColumn;
+   UINTN                            BootTextRow;
++  EFI_LOADED_IMAGE_PROTOCOL        *LoadedImage;
++  BOOLEAN                          UsbOnlyMode;
++
++  UsbOnlyMode = FALSE;
++  Status      = gBS->HandleProtocol (
++                       ImageHandle,
++                       &gEfiLoadedImageProtocolGuid,
++                       (VOID **)&LoadedImage
++                       );
++  if (!EFI_ERROR (Status) &&
++      (LoadedImage->LoadOptions != NULL) &&
++      (LoadedImage->LoadOptionsSize >= StrLen (L"USB_ONLY") * sizeof (CHAR16)) &&
++      (StrnCmp ((CHAR16 *)LoadedImage->LoadOptions, L"USB_ONLY", StrLen (L"USB_ONLY")) == 0))
++  {
++    UsbOnlyMode = TRUE;
++  }
+ 
+   //
+   // Set Logo status invalid when boot manager menu is launched
+@@ -1095,7 +1254,7 @@ BootManagerMenuEntry (
+   //
+   // Initialize Boot menu data
+   //
+-  Status = InitializeBootMenuData (BootOption, BootOptionCount, &BootMenuData);
++  Status = InitializeBootMenuData (BootOption, BootOptionCount, UsbOnlyMode, &BootMenuData);
+   if (EFI_ERROR (Status)) {
+     DEBUG ((DEBUG_ERROR, "%a Failed InitializeBootMenuData %r\n", __func__, Status));
+     return EFI_NOT_FOUND;
+@@ -1142,13 +1301,28 @@ BootManagerMenuEntry (
+ 
+           break;
+ 
++        case L'r':
++        case L'R':
++          EfiBootManagerFreeLoadOptions (BootOption, BootOptionCount);
++          FreePool (BootMenuData.PtrTokens);
++          FreePool (BootMenuData.OptionMap);
++          EfiBootManagerConnectAll ();
++          EfiBootManagerRefreshAllBootOption ();
++          BootOption = EfiBootManagerGetLoadOptions (&BootOptionCount, LoadOptionTypeBoot);
++          InitializeBootMenuData (BootOption, BootOptionCount, UsbOnlyMode, &BootMenuData);
++          DrawBootPopupMenu (&BootMenuData);
++          break;
++
+         case CHAR_CARRIAGE_RETURN:
++          if (!BootMenuData.HasBootableItems) {
++            break;
++          }
+           gST->ConOut->ClearScreen (gST->ConOut);
+           //
+           // Set boot resolution for normal boot
+           //
+           BdsSetConsoleMode (FALSE);
+-          BootFromSelectOption (BootOption, BootOptionCount, BootMenuData.SelectItem);
++          BootFromSelectOption (BootOption, BootOptionCount, &BootMenuData);
+           //
+           // Back to boot manager menu again, set back to setup resolution
+           //
+@@ -1164,6 +1338,7 @@ BootManagerMenuEntry (
+ 
+   EfiBootManagerFreeLoadOptions (BootOption, BootOptionCount);
+   FreePool (BootMenuData.PtrTokens);
++  FreePool (BootMenuData.OptionMap);
+ 
+   HiiRemovePackages (gStringPackHandle);
+ 
+diff --git a/MdeModulePkg/Application/BootManagerMenuApp/BootManagerMenu.h b/MdeModulePkg/Application/BootManagerMenuApp/BootManagerMenu.h
+index 697a44aeae..aa65d81d3b 100644
+--- a/MdeModulePkg/Application/BootManagerMenuApp/BootManagerMenu.h
++++ b/MdeModulePkg/Application/BootManagerMenuApp/BootManagerMenu.h
+@@ -20,6 +20,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #include <Library/DevicePathLib.h>
+ #include <Protocol/LoadedImage.h>
+ #include <Protocol/BootLogo.h>
++#include <Protocol/BlockIo.h>
+ 
+ #define TITLE_TOKEN_COUNT  1
+ #define HELP_TOKEN_COUNT   3
+@@ -46,4 +47,7 @@ typedef struct _BOOT_MENU_POPUP_DATA {
+   UINTN                           SelectItem;                    // Current select  item
+   BOOT_MENU_SCREEN                MenuScreen;                    // Boot menu screen information
+   BOOT_MENU_SCROLL_BAR_CONTROL    ScrollBarControl;              // Boot menu scroll bar information
++  BOOLEAN                         UsbOnlyMode;                   // Show only USB boot options
++  BOOLEAN                         HasBootableItems;              // FALSE when placeholder row shown
++  UINTN                           *OptionMap;                    // Map menu row -> BootOption index
+ } BOOT_MENU_POPUP_DATA;
+diff --git a/MdeModulePkg/Application/BootManagerMenuApp/BootManagerMenuApp.inf b/MdeModulePkg/Application/BootManagerMenuApp/BootManagerMenuApp.inf
+index 3dee2480d0..66265de0c2 100644
+--- a/MdeModulePkg/Application/BootManagerMenuApp/BootManagerMenuApp.inf
++++ b/MdeModulePkg/Application/BootManagerMenuApp/BootManagerMenuApp.inf
+@@ -41,12 +41,16 @@
+   UefiBootServicesTableLib
+   UefiApplicationEntryPoint
+   UefiBootManagerLib
++  DevicePathLib
+ 
+ [Guids]
+ 
+ [Protocols]
+   gEfiBootLogoProtocolGuid                      ## SOMETIMES_CONSUMES
+   gEfiLoadedImageDevicePathProtocolGuid         ## CONSUMES
++  gEfiBlockIoProtocolGuid                       ## SOMETIMES_CONSUMES
++  gEfiDevicePathProtocolGuid                    ## SOMETIMES_CONSUMES
++  gEfiLoadedImageProtocolGuid                   ## SOMETIMES_CONSUMES
+ 
+ [Pcd]
+   gEfiMdeModulePkgTokenSpaceGuid.PcdConOutRow                          ## PRODUCES
+diff --git a/MdeModulePkg/Application/BootManagerMenuApp/BootManagerMenuStrings.uni b/MdeModulePkg/Application/BootManagerMenuApp/BootManagerMenuStrings.uni
+index 355bd52c3b..4e9c295b35 100644
+--- a/MdeModulePkg/Application/BootManagerMenuApp/BootManagerMenuStrings.uni
++++ b/MdeModulePkg/Application/BootManagerMenuApp/BootManagerMenuStrings.uni
+@@ -22,3 +22,18 @@
+ 
+ #string STR_BOOT_POPUP_MENU_HELP3_STRING  #language    en-US    "ESC to exit"
+                                           #language    fr-FR    "ESC to exit"
++
++#string STR_USB_BOOT_MENU_TITLE_STRING  #language    en-US    "Select USB Boot Device:"
++                                          #language    fr-FR    "Select USB Boot Device:"
++
++#string STR_USB_BOOT_MENU_EMPTY_STRING  #language    en-US    "No bootable USB devices found."
++                                          #language    fr-FR    "No bootable USB devices found."
++
++#string STR_USB_BOOT_MENU_HELP1_STRING  #language    en-US    "Up/Down to move, ENTER to boot USB"
++                                          #language    fr-FR    "Up/Down to move, ENTER to boot USB"
++
++#string STR_USB_BOOT_MENU_HELP2_STRING  #language    en-US    "R to rescan USB devices"
++                                          #language    fr-FR    "R to rescan USB devices"
++
++#string STR_USB_BOOT_MENU_HELP3_STRING  #language    en-US    "ESC to cancel and continue boot"
++                                          #language    fr-FR    "ESC to cancel and continue boot"
+diff --git a/MdeModulePkg/Universal/Console/TerminalDxe/TerminalConIn.c b/MdeModulePkg/Universal/Console/TerminalDxe/TerminalConIn.c
+index 204d599c3d..f5cd688c22 100644
+--- a/MdeModulePkg/Universal/Console/TerminalDxe/TerminalConIn.c
++++ b/MdeModulePkg/Universal/Console/TerminalDxe/TerminalConIn.c
+@@ -1896,7 +1896,8 @@ UnicodeToEfiKey (
+          * numeric codes, and there are no ambiguous prefixes shared with
+          * other terminal types.
+          */
+-        if ((TerminalDevice->TerminalType == TerminalTypeTtyTerm) &&
++        if (((TerminalDevice->TerminalType == TerminalTypeTtyTerm) ||
++             (TerminalDevice->TerminalType == TerminalTypePcAnsi)) &&
+             (Key.ScanCode == SCAN_NULL) &&
+             (UnicodeChar >= '0') &&
+             (UnicodeChar <= '9'))
+@@ -2065,7 +2066,8 @@ UnicodeToEfiKey (
+          * state is only used by the TTY terminal type.
+          */
+         Key.ScanCode = SCAN_NULL;
+-        if (TerminalDevice->TerminalType == TerminalTypeTtyTerm) {
++        if ((TerminalDevice->TerminalType == TerminalTypeTtyTerm) ||
++            (TerminalDevice->TerminalType == TerminalTypePcAnsi)) {
+           if ((UnicodeChar == '~') && (TerminalDevice->TtyEscapeIndex <= 2)) {
+             UINT16  EscCode;
+             TerminalDevice->TtyEscapeStr[TerminalDevice->TtyEscapeIndex] = 0; /* Terminate string */
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
+index 4117f4c214..124db054a6 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManager.c
+@@ -10,6 +10,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
+ #include "PlatformBootManager.h"
+ #include "PlatformConsole.h"
+ #include <Protocol/FirmwareVolume2.h>
++#include <Library/IoLib.h>
+ 
+ /**
+   Signal EndOfDxe event and install SMM Ready to lock protocol.
+@@ -279,8 +280,100 @@ PlatformRegisterFvBootOption (
+   EfiBootManagerFreeLoadOptions (BootOptions, BootOptionCount);
+ }
+ 
++STATIC EFI_GUID mUsbBootMenuFileGuid = {
++  0xeec25bdc, 0x67f2, 0x4d95, { 0xb1, 0xd5, 0xf8, 0x1b, 0x20, 0x39, 0xd1, 0x1d }
++};
++
++STATIC
++EFI_STATUS
++PlatformRegisterUsbBootMenuOption (
++  OUT UINT16  *OptionNumber
++  )
++{
++  EFI_STATUS                         Status;
++  UINTN                              Index;
++  BOOLEAN                            ExactMatch;
++  EFI_BOOT_MANAGER_LOAD_OPTION       NewOption;
++  EFI_BOOT_MANAGER_LOAD_OPTION       *BootOptions;
++  UINTN                              BootOptionCount;
++  MEDIA_FW_VOL_FILEPATH_DEVICE_PATH  FileNode;
++  EFI_DEVICE_PATH_PROTOCOL           *DevicePath;
++  EFI_DEVICE_PATH_PROTOCOL           *FvDevicePath;
++  CHAR16                             *OptData;
++
++  if (OptionNumber == NULL) {
++    return EFI_INVALID_PARAMETER;
++  }
++
++  FvDevicePath = BdsGetFvFileDevicePath (&mUsbBootMenuFileGuid);
++  if (FvDevicePath == NULL) {
++    return EFI_NOT_FOUND;
++  }
++
++  EfiInitializeFwVolDevicepathNode (&FileNode, &mUsbBootMenuFileGuid);
++  DevicePath = AppendDevicePathNode (
++                 FvDevicePath,
++                 (EFI_DEVICE_PATH_PROTOCOL *)&FileNode
++                 );
++  FreePool (FvDevicePath);
++  if (DevicePath == NULL) {
++    return EFI_OUT_OF_RESOURCES;
++  }
++
++  OptData = L"USB_ONLY";
++  Status  = EfiBootManagerInitializeLoadOption (
++              &NewOption,
++              LoadOptionNumberUnassigned,
++              LoadOptionTypeBoot,
++              LOAD_OPTION_ACTIVE | LOAD_OPTION_HIDDEN | LOAD_OPTION_CATEGORY_APP,
++              L"USB Boot Menu",
++              DevicePath,
++              (UINT8 *)OptData,
++              (UINT32)StrSize (OptData)
++              );
++  FreePool (DevicePath);
++  if (EFI_ERROR (Status)) {
++    return Status;
++  }
++
++  BootOptions   = EfiBootManagerGetLoadOptions (&BootOptionCount, LoadOptionTypeBoot);
++  ExactMatch    = FALSE;
++  *OptionNumber = (UINT16)LoadOptionNumberUnassigned;
++
++  for (Index = 0; Index < BootOptionCount; Index++) {
++    if (!BootOptionReferencesFvFileGuid (&BootOptions[Index], &mUsbBootMenuFileGuid)) {
++      continue;
++    }
++
++    if (PlatformFindLoadOption (&NewOption, &BootOptions[Index], 1) != -1) {
++      ExactMatch    = TRUE;
++      *OptionNumber = (UINT16)BootOptions[Index].OptionNumber;
++      continue;
++    }
++
++    EfiBootManagerDeleteLoadOptionVariable (
++      BootOptions[Index].OptionNumber,
++      LoadOptionTypeBoot
++      );
++  }
++
++  if (!ExactMatch) {
++    Status = EfiBootManagerAddLoadOptionVariable (&NewOption, (UINTN)-1);
++    if (!EFI_ERROR (Status)) {
++      *OptionNumber = (UINT16)NewOption.OptionNumber;
++    }
++  } else {
++    Status = EFI_SUCCESS;
++  }
++
++  EfiBootManagerFreeLoadOption (&NewOption);
++  EfiBootManagerFreeLoadOptions (BootOptions, BootOptionCount);
++  return Status;
++}
++
+ EFI_HANDLE BootManagerEntryNotifyHandle1;
+ EFI_HANDLE BootManagerEntryNotifyHandle2;
++EFI_HANDLE BootManagerUsbNotifyHandle;
+ EFI_HANDLE BootManagerContinueNotifyHandle;
+ 
+ VOID
+@@ -297,9 +390,22 @@ PlatformUnregisterBootManagerEntryNotifyCallback (
+                   (VOID **)&SimpleEx
+                   );
+   if (!EFI_ERROR (Status)) {
+-    Status = SimpleEx->UnregisterKeyNotify (SimpleEx, BootManagerEntryNotifyHandle1);
+-    Status = SimpleEx->UnregisterKeyNotify (SimpleEx, BootManagerEntryNotifyHandle2);
+-    Status = SimpleEx->UnregisterKeyNotify (SimpleEx, BootManagerContinueNotifyHandle);
++    if (BootManagerEntryNotifyHandle1 != NULL) {
++      SimpleEx->UnregisterKeyNotify (SimpleEx, BootManagerEntryNotifyHandle1);
++      BootManagerEntryNotifyHandle1 = NULL;
++    }
++    if (BootManagerEntryNotifyHandle2 != NULL) {
++      SimpleEx->UnregisterKeyNotify (SimpleEx, BootManagerEntryNotifyHandle2);
++      BootManagerEntryNotifyHandle2 = NULL;
++    }
++    if (BootManagerUsbNotifyHandle != NULL) {
++      SimpleEx->UnregisterKeyNotify (SimpleEx, BootManagerUsbNotifyHandle);
++      BootManagerUsbNotifyHandle = NULL;
++    }
++    if (BootManagerContinueNotifyHandle != NULL) {
++      SimpleEx->UnregisterKeyNotify (SimpleEx, BootManagerContinueNotifyHandle);
++      BootManagerContinueNotifyHandle = NULL;
++    }
+   }
+ }
+ 
+@@ -351,6 +457,35 @@ BootManagerEntryNotifyCallback (
+   return EFI_SUCCESS;
+ }
+ 
++EFI_STATUS
++EFIAPI
++UsbBootMenuEntryNotifyCallback (
++  EFI_KEY_DATA *KeyData
++  )
++{
++  EFI_GRAPHICS_OUTPUT_BLT_PIXEL  Black;
++  EFI_GRAPHICS_OUTPUT_BLT_PIXEL  White;
++  static UINTN                   UpdateUsbMessage = 1;
++
++  IoWrite8 (0x80, 0xE5);
++  Black.Blue = Black.Green = Black.Red = Black.Reserved = 0;
++  White.Blue = White.Green = White.Red = White.Reserved = 0xFF;
++
++  if (UpdateUsbMessage) {
++    BootLogoUpdateProgress (
++      White,
++      Black,
++      L"Entering USB Boot Menu, Please Wait...",
++      White,
++      0,
++      0
++      );
++    UpdateUsbMessage = 0;
++  }
++
++  return EFI_SUCCESS;
++}
++
+ VOID
+ PlatformRegisterBootManagerEntryNotifyCallback (
+   VOID
+@@ -397,6 +532,15 @@ PlatformRegisterBootManagerEntryNotifyCallback (
+                          );
+   }
+ 
++  KeyData.Key.ScanCode    = SCAN_DELETE;
++  KeyData.Key.UnicodeChar = CHAR_NULL;
++  SimpleEx->RegisterKeyNotify (
++              SimpleEx,
++              &KeyData,
++              UsbBootMenuEntryNotifyCallback,
++              &BootManagerUsbNotifyHandle
++              );
++
+   //
+   // Clear the boot prompt text when the user presses ENTER to boot directly.
+   //
+@@ -431,9 +575,13 @@ PlatformBootManagerBeforeConsole (
+   EFI_INPUT_KEY                 Enter;
+   EFI_INPUT_KEY                 CustomKey;
+   EFI_INPUT_KEY                 Down;
++  EFI_INPUT_KEY                 DeleteKey;
+   EFI_BOOT_MANAGER_LOAD_OPTION  BootOption;
++  UINT16                        UsbOptionNumber;
+   BOOLEAN                       ConsoleInitialized;
+ 
++  IoWrite8 (0x80, 0xE1);
++
+   //
+   // Register ENTER as CONTINUE key
+   //
+@@ -466,6 +614,16 @@ PlatformBootManagerBeforeConsole (
+   EfiBootManagerGetBootManagerMenu (&BootOption);
+   EfiBootManagerAddKeyOptionVariable (NULL, (UINT16)BootOption.OptionNumber, 0, &Down, NULL);
+ 
++  //
++  // Register Delete key to launch the USB-only boot device selector popup.
++  //
++  DeleteKey.ScanCode    = SCAN_DELETE;
++  DeleteKey.UnicodeChar = CHAR_NULL;
++  EfiBootManagerDeleteKeyOptionVariable (NULL, 0, &DeleteKey, NULL);
++  if (!EFI_ERROR (PlatformRegisterUsbBootMenuOption (&UsbOptionNumber))) {
++    EfiBootManagerAddKeyOptionVariable (NULL, UsbOptionNumber, 0, &DeleteKey, NULL);
++  }
++
+   //
+   // Process update capsules that don't contain embedded drivers.
+   //
+@@ -541,6 +699,8 @@ PlatformBootManagerAfterConsole (
+     EfiBootManagerRefreshAllBootOption ();
+   }
+ 
++  IoWrite8 (0x80, 0xE2);
++
+   //
+   // Active BOOT_ON_FLASH_UPDATE mode means that at least one capsule has been
+   // discovered by a bootloader and passed for further processing into EDK which
+@@ -599,11 +759,14 @@ PlatformBootManagerAfterConsole (
+     return;
+   }
+ 
++  IoWrite8 (0x80, 0xE3);
++
+   if (FixedPcdGetBool (PcdBootManagerEscape)) {
+     if (FixedPcdGetBool (PcdSerialTerminalPrintEnabled)) {
+       Print (
+         L"\n"
+         L"    Esc              to enter Setup Option Menu.\n"
++        L"    Del              to select USB Boot Device.\n"
+         L"    ENTER            to boot directly.\n"
+         L"\n"
+         );
+@@ -611,7 +774,7 @@ PlatformBootManagerAfterConsole (
+       BootLogoUpdateProgress (
+         White,
+         Black,
+-        L"Press ESC for Boot Options/Settings",
++        L"Press ESC for Setup, DEL for USB Boot Menu",
+         White,
+         0,
+         0
+@@ -622,6 +785,7 @@ PlatformBootManagerAfterConsole (
+       Print (
+         L"\n"
+         L"    F2 or Down      to enter Setup Option Menu.\n"
++        L"    Del             to select USB Boot Device.\n"
+         L"    ENTER           to boot directly.\n"
+         L"\n"
+         );
+@@ -629,7 +793,7 @@ PlatformBootManagerAfterConsole (
+       BootLogoUpdateProgress (
+         White,
+         Black,
+-        L"Press F2 or Down for Boot Options/Settings",
++        L"Press F2/Down for Setup, DEL for USB Boot Menu",
+         White,
+         0,
+         0
+@@ -650,6 +814,7 @@ PlatformBootManagerWaitCallback (
+   )
+ {
+   if (TimeoutRemain == 0) {
++    IoWrite8 (0x80, 0xE8);
+     PlatformUnregisterBootManagerEntryNotifyCallback ();
+     BootLogoClearProgress ();
+   }
+diff --git a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
+index d1a15df444..fcdc016b99 100644
+--- a/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
++++ b/UefiPayloadPkg/Library/PlatformBootManagerLib/PlatformBootManagerLib.inf
+@@ -37,6 +37,7 @@
+ 
+ [LibraryClasses]
+   BaseLib
++  IoLib
+   UefiBootServicesTableLib
+   UefiRuntimeServicesTableLib
+   UefiLib

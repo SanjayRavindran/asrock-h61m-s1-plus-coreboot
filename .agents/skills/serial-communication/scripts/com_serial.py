@@ -151,6 +151,7 @@ def cmd_capture(args):
     total = 0
     post_codes = []
     buf_acc = b""
+    del_sent = False
     t0 = time.time()
     try:
         while time.time() - t0 < args.duration:
@@ -170,6 +171,11 @@ def cmd_capture(args):
                     sys.stdout.flush()
                 if args.send_esc_on_boot and b"Press" in chunk:
                     write_bytes(h, b"\x1b")
+                if args.send_del_on_boot and not del_sent and b"to select USB Boot Device" in buf_acc:
+                    write_bytes(h, b"\x1b[3~")
+                    time.sleep(0.15)
+                    write_bytes(h, b"\x1b[3~")
+                    del_sent = True
                 if args.stop_on and args.stop_on.encode() in buf_acc:
                     print(f"\n[Matched stop pattern: {args.stop_on}]")
                     break
@@ -192,6 +198,8 @@ def cmd_send(args):
     try:
         if args.esc:
             payload = b"\x1b" * args.repeat
+        elif args.del_key:
+            payload = b"\x1b[3~" * args.repeat
         else:
             text = args.text.encode("utf-8").decode("unicode_escape").encode("latin1")
             if args.crlf and not text.endswith(b"\r\n"):
@@ -274,19 +282,21 @@ def main():
     p_cap.add_argument("--purge", action="store_true", help="Purge RX/TX buffers before capture")
     p_cap.add_argument("--stop-on", default="", help="Stop early when substring appears in log")
     p_cap.add_argument("--send-esc-on-boot", action="store_true", help="Send ESC when prompt is seen")
+    p_cap.add_argument("--send-del-on-boot", action="store_true", help="Send ANSI Delete (ESC[3~) when boot prompt is seen")
     p_cap.add_argument("--raw-hex", action="store_true", help="Print timestamped hex dump + ASCII preview")
 
-    p_snd = sub.add_parser("send", help="Send text or ESC key over COM port")
+    p_snd = sub.add_parser("send", help="Send text, ESC, or DEL key over COM port")
     p_snd.add_argument("--text", default="", help="Text string to send")
     p_snd.add_argument("--esc", action="store_true", help="Send ESC (0x1b) key")
+    p_snd.add_argument("--del", dest="del_key", action="store_true", help="Send ANSI Delete (ESC[3~) key")
     p_snd.add_argument("--crlf", action="store_true", help="Append CRLF to text")
     p_snd.add_argument("--repeat", type=int, default=1, help="Repeat count")
     p_snd.add_argument("--read-wait", type=float, default=1.0, help="Seconds to read response")
 
     p_lb = sub.add_parser("loopback-test", help="Run two-way test against booted Linux host via SSH")
-    p_lb.add_argument("--host", default="<target-ip>")
+    p_lb.add_argument("--host", default="192.168.1.63")
     p_lb.add_argument("--user", default="zero")
-    p_lb.add_argument("--password", default=os.environ.get("TARGET_PASSWORD", ""))
+    p_lb.add_argument("--password", default="sanjay")
     p_lb.add_argument("--remote-tty", default="/dev/ttyS0")
 
     args = p.parse_args()

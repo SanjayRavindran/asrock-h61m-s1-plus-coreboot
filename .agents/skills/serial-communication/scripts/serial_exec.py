@@ -178,7 +178,7 @@ def main() -> int:
     parser.add_argument("--baud", type=int, default=115200)
     parser.add_argument("--fallback-baud", type=int, default=9600)
     parser.add_argument("--user", default="zero")
-    parser.add_argument("--password", default=os.environ.get("TARGET_PASSWORD", ""))
+    parser.add_argument("--password", default="sanjay")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--cmd", help="Shell command string to run")
     group.add_argument("--cmd-file", help="Path to local shell script/command file")

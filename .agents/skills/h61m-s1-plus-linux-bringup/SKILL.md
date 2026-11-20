@@ -2,27 +2,29 @@
 name: h61m-s1-plus-linux-bringup
 description: >-
   Configure and verify Ubuntu Linux on the Coreboot-flashed ASRock H61M-S1 PLUS
-  (host h61 via DHCP on eno0 at <target-ip>), including h61-coreboot-config TUI/CLI
-  CFR management, COM1-only 115200 8N1 serial console/getty (LPT1 disabled),
-  Netplan eno0 DHCP, NCT6776 hwmon sensors, S3 NVIDIA handshake, and IGD/Tesla P4
-  checks. Use after flashing Coreboot, reinstalling Ubuntu, or configuring BIOS options from OS.
+  (host h61 via DHCP on eno0 at 192.168.1.24), including h61-coreboot-config TUI/CLI
+  10-option CFR management, COM1 115200 8N1 serial console/getty + LPT1 (0x378 parport0)
+  enabled, Netplan eno0 DHCP, NCT6776 hwmon sensors, S3 NVIDIA handshake, and
+  IGD/Tesla P4 checks. Use after flashing Coreboot, reinstalling Ubuntu, or
+  configuring BIOS options from OS.
 ---
 
-# ASRock H61M-S1 PLUS Linux Bring-Up & Verification (`v26.11.2`)
+# ASRock H61M-S1 PLUS Linux Bring-Up & Verification (`v26.11.3`)
 
-Use this runbook to verify, configure Coreboot CFR options, or restore OS state on `h61` (`<target-ip>` via DHCP on `eno0`) over SSH or `COM5` (see `serial-communication` and [serial_exec.py](../serial-communication/scripts/serial_exec.py)).
+Use this runbook to verify, configure Coreboot CFR options, or restore OS state on `h61` (`192.168.1.24` via DHCP on `eno0`) over SSH or `COM5` (see `serial-communication` and [serial_exec.py](../serial-communication/scripts/serial_exec.py)).
 
 ## 1. OS Runtime BIOS & Hardware Configuration (`h61-coreboot-config`)
 
 [`scripts/h61_coreboot_config.py`](../../../scripts/h61_coreboot_config.py) is installed on `h61` at `/usr/local/bin/h61-coreboot-config` (stdlib-only Python 3 TUI + CLI):
 
-- **All 9 Coreboot CFR options** (`gfx_uma_size`, `dram_max_speed`, `peg_bifurcation`, `hyper_threading`, `sata_mode`, `nmi`, `fan_profile`, `fb_debug_pause`, `power_on_after_fail`) are exposed via `SMMSTORE` under `/sys/firmware/efi/efivars/*-ceae4c1d-335b-4685-a4a0-fc4a94eea085` with attributes `0x00000007` (`NV|BS|RT`, `8` bytes `<II`) and `FS_IMMUTABLE_FL` managed automatically.
+- **All 10 Coreboot CFR options** (`gfx_uma_size`, `dram_max_speed`, `peg_bifurcation`, `hyper_threading`, `sata_mode`, `nmi`, `me_state`, `fan_profile`, `fb_debug_pause`, `power_on_after_fail`) are exposed via `SMMSTORE` under `/sys/firmware/efi/efivars/*-ceae4c1d-335b-4685-a4a0-fc4a94eea085` with attributes `0x00000007` (`NV|BS|RT`, `8` bytes `<II`) and `FS_IMMUTABLE_FL` managed automatically.
+- **Note on `me_state`**: Leave `me_state=0` (`Normal`) when booted with locked `FREG2` stock/compat ME (`8.1.20.1336` triggers a harmless ~1.3s `ME_GEN_7` MKHI timeout warning in Coreboot if `me_state=1` is set). Coreboot SMM (`me_smm.c` `RCBA32_OR(FD2, PCH_DISABLE_MEI1)`) already hides PCI `00:16.0` before OS handoff so `lspci -s 00:16.0` is empty in Linux. For physical hardware `AltMeDisable=1` + `124 KiB` stripped ME, flash `w25q64-8mb-minimal-me-full.rom` externally onto socketed `U3`.
 - **Common commands**:
   ```bash
   sudo h61-coreboot-config                  # Launch 4-tab interactive curses TUI
-  sudo h61-coreboot-config self-test        # Verify 9 efivars, COM1 active, LPT1 disabled, WOL, hwmon
+  sudo h61-coreboot-config self-test        # Verify 10 efivars, COM1 active, LPT1 active, WOL, hwmon
   sudo h61-coreboot-config status           # Live CPU, DRAM, COM1/LPT1, ACPI wakeups, sensors
-  sudo h61-coreboot-config list             # List all 9 CFR options & values
+  sudo h61-coreboot-config list             # List all 10 CFR options & values
   sudo h61-coreboot-config set fan_profile quiet
   sudo h61-coreboot-config backup /tmp/cfr-profile.json
   sudo h61-coreboot-config wol on
@@ -30,9 +32,9 @@ Use this runbook to verify, configure Coreboot CFR options, or restore OS state 
   sudo h61-coreboot-config reboot-uefi --now
   ```
 
-## 2. COM1-Only `115200 8N1` Serial Console (`LPT1` Disabled)
+## 2. COM1 (`115200 8N1`) & LPT1 (`0x378` IRQ 5) Super I/O Verification
 
-Coreboot and EDK2 use `COM1` (`0x3f8`, `/dev/ttyS0`) at `115200 8N1`; **`LPT1` (`0x378`) is disabled at boot** in `v26.11.2`:
+Coreboot and EDK2 use `COM1` (`0x3f8`, `/dev/ttyS0`) at `115200 8N1`, and **`v26.11.3` enables `LPT1` (`LDN 0x01`, `0x378`, IRQ 5, SPP `CRf0=0x38`, `PNP0400`)** while keeping LPT1 free for standard parallel devices (`post.c` 0x378 POST writes stay removed; Port `0x80` POST goes only to LPC):
 
 1. `/etc/default/grub.d/99-serial-console.cfg`:
    ```bash
@@ -48,14 +50,14 @@ Coreboot and EDK2 use `COM1` (`0x3f8`, `/dev/ttyS0`) at `115200 8N1`; **`LPT1` (
    ExecStart=-/usr/sbin/agetty --noreset --noclear --issue-file=/etc/issue:/etc/issue.d:/run/issue.d:/usr/lib/issue.d 115200 - $TERM
    ```
 3. Enable for boot **without** restarting inside an active `ttyS0` shell (`sudo systemctl daemon-reload; sudo systemctl enable serial-getty@ttyS0.service ssh.socket`).
-4. **Verify LPT1 disabled & COM1 active**:
-   - `grep . /sys/bus/pnp/devices/*/id` -> `PNP0501` (`COM1`), `PNP0303`, `PNP0f13` (no `PNP0400`).
-   - `sudo grep -iE 'serial|parport|0378|03f8' /proc/ioports` -> ONLY `03f8-03ff : serial`.
+4. **Verify LPT1 + COM1 active & LPC Port `0x80` unlocked**:
+   - `grep . /sys/bus/pnp/devices/*/id` -> `PNP0400` (`LPT1`), `PNP0501` (`COM1`), `PNP0303`, `PNP0f13`.
+   - `sudo grep -iE 'serial|parport|0378|03f8' /proc/ioports` -> `0378-037a : parport0` and `03f8-03ff : serial`.
+   - `efibootmgr -v` -> `Boot0001* USB Boot Menu` (`FvFile(eec25bdc-67f2-4d95-b1d5-f81b2039d11d)`, data `USB_ONLY`).
 
 ## 3. Netplan NIC Naming & `eno0` DHCP Configuration
 
-- Under Coreboot, onboard Realtek `RTL8111` (`02:00.0`, `10ec:8168`, `r8169`, MAC `d0:50:99:7c:84:dd`) enumerates as `eno0` (`ID_NET_NAME_ONBOARD=eno0`, alt `enp2s0`, NOT `enp3s0`).
-- `/etc/netplan/00-installer-config.yaml` matches `macaddress: d0:50:99:7c:84:dd` -> `eno0` DHCP (`<target-ip>/24`).
+- Under Coreboot, onboard Realtek `RTL8111` (`10ec:8168`, `r8169`, MAC `d0:50:99:7c:84:dd`) stays `eno0` (`192.168.1.24/24`, matched by MAC in `/etc/netplan/00-installer-config.yaml`). Note: if an add-in PCIe NIC is installed in `PCIE2` (`00:1c.0`, e.g., Intel `I226-V` at `02:00.0`), Coreboot enumerates onboard `RTL8111` (`pcie_rp4` `00:1c.3`) at `03:00.0` (`RP04`), while systemd MAC matching keeps `eno0` unchanged.
 - **Pitfall if Adding a Linux Bridge**: Any competing `enp2s0:` Netplan stanza sorts alphabetically before `enp3s0`, stealing `eno0` and blackholing outbound IP replies.
 
 ## 4. `NCT6776F/D` Hardware Monitor & ACPI S3

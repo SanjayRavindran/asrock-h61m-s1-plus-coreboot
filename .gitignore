@@ -8,3 +8,8 @@ outputs/
 *.swp
 __pycache__/
 .DS_Store
+
+# Allow committed motherboard/chipset firmware blobs
+!blobs/
+!blobs/*.bin
+!blobs/*.vbt

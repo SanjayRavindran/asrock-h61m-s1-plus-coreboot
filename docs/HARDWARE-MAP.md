@@ -9,7 +9,7 @@
 [**Hardware Report**](HARDWARE-REPORT.md) ·
 [**Blobs & Licenses**](../BLOBS.md)
 
-Authoritative wiring, register, PCI/ACPI/IRQ, Coreboot driver, and Linux sysfs map cross-verified against the **ASRock `H61M-VS4 G/A 1.00` (`H61M-S1 PLUS R1.01`) boardview**, Coreboot `v26.11.2` source code, `inteltool -G`, `/dev/port`, and live Ubuntu `7.0.0-43-generic` telemetry (`h61`).
+Authoritative wiring, register, PCI/ACPI/IRQ, Coreboot driver, and Linux sysfs map cross-verified against the **ASRock `H61M-VS4 G/A 1.00` (`H61M-S1 PLUS R1.01`) boardview**, Coreboot `v26.11.3` source code, `inteltool -G`, `/dev/port`, and live Ubuntu `7.0.0-43-generic` telemetry (`h61`).
 
 > [!NOTE]
 > Every pin, PCI BDF, I/O port, MMIO base, and GPIO direction in this document is cross-checked against the physical boardview netlist and live runtime measurements (`lspci -vvv`, `/dev/port`, `inteltool -G`).
@@ -47,16 +47,16 @@ flowchart TB
 
     CPU <-->|"DMI x4 Link"| PCH["Intel H61 Express PCH (BD82x6x 00:1f.0)"]
 
-    PCH -->|"00:1c.0 (RP4 -> RP01)"| LAN["Realtek RTL8111 02:00.0 (r8169 eno0 + WOL)"]
-    PCH -->|"00:1b.0 (< 4 GiB 0xdebfc000)"| HDA["ALC662 (AUDIO2 / HD_AUDIO1 / SPDIF) + HDMI Audio"]
+    PCH -->|"00:1c.0 (RP1) -> PCIE2; 00:1c.3 (RP4)"| LAN["Realtek RTL8111 (r8169 eno0 + WOL)"]
+    PCH -->|"00:1b.0 (< 4 GiB 0xde9fc000)"| HDA["ALC662 (AUDIO2 / HD_AUDIO1 / SPDIF) + HDMI Audio"]
     PCH -->|"00:1f.2 (map 0x33)"| SATA["SATA_0 (P0), SATA_1 (P1), SATA_2 (P4), SATA_3 (P5)"]
     PCH -->|"00:1a.0 / 00:1d.0"| USB["8x USB 2.0 Ports (0-5, 8-9, shared OC0#)"]
-    PCH -->|"SPI Bus"| SPI["U3 Socketed DIP-8 W25Q64 (8 MiB: IFD + ME + 6.5M BIOS / SMMSTORE)"]
-    PCH -->|"LPC Bus (GEN_PMCON_1=0x0a10)"| LPCTPM["18-pin LPC/TPM1 Header (Port 0x80 POST)"]
+    PCH -->|"SPI Bus"| SPI["U3 Socketed DIP-8 W25Q32 (4M) / W25Q64 (8M)"]
+    PCH -->|"LPC Bus (GEN_PMCON_1=0x0a10, GCS.RPR=0)"| LPCTPM["18-pin LPC/TPM1 Header (Port 0x80 + TPM 0xfed40000)"]
     PCH -->|"LPC 0x2e / 0x290"| SIO["U1007 Nuvoton NCT6776F/D Super I/O"]
 
     SIO -->|"LDN 0x02 (0x3f8 IRQ 4)"| COM1["COM1 DB9 (115200 8N1 /dev/ttyS0)"]
-    SIO -.->|"LDN 0x01 (CR30=0x00)"| LPT1["LPT1 Disabled at Boot"]
+    SIO -->|"LDN 0x01 (0x378 IRQ 5 SPP)"| LPT1["LPT1 Parallel Header (PNP0400 /dev/parport0)"]
     SIO -->|"LDN 0x05 (0x60/0x64)"| PS2["PS/2 Keyboard & Mouse"]
     SIO -->|"LDN 0x0b (0x290 + CR 0xf7)"| HWM["SmartFan IV (CPU_FAN1 / CHA_FAN1) + S3 PLED- Blink"]
 ```
@@ -84,27 +84,26 @@ flowchart TB
                                                      v
 +---------------------------------------------------------------------------------------------------+
 |  Intel H61 Express PCH (BD82x6x, PCI 00:1f.0 ID 8086:1c5c)                                        |
-|                                                                                                   |
-|  +-- 00:16.0 MEI1 (8086:1c3a, <4G 0xdebf7000)   --> Intel ME 8.1.20.1336 (FREG2 0x1000..0x17ffff) |
+|  +-- 00:16.0 MEI1 (8086:1c3a, hidden in Linux OS by me_smm.c; optional 124K AltMeDisable=1)       |
 |  +-- 00:1a.0 EHCI2 (8086:1c2d, GPE /proc EHC2) -+-> USB2 Ports 0-5, 8-9 (Rear + Headers; OC0#)    |
 |  +-- 00:1d.0 EHCI1 (8086:1c26, GPE /proc EHC1) -+                                                 |
-|  +-- 00:1b.0 HD Audio (8086:1c20, <4G 0xdebfc000)                                                 |
+|  +-- 00:1b.0 HD Audio (8086:1c20, <4G)                                                            |
 |  |     +-- SDIN0 addr 0 -> AU1 Realtek ALC662 (10ec:0662) -> AUDIO2 (Rear) + HD_AUDIO1 + SPDIF_OUT|
 |  |     +-- Codec addr 3 -> Intel CougarPoint HDMI (8086:2805) -> Pin 0x05 DDPB -> HDMI1           |
-|  +-- 00:1c.0 PCIe RP4* (8086:1c16, ACPI RP01) -> 02:00.0 Realtek RTL8111 (10ec:8168) -> r8169 eno0|
-|  +-- (pcie_rp1 empty) -------------------------> PCIE2 x1 Slot (PCH Gen2 x1)                      |
+|  +-- 00:1c.0 PCIe RP1 -> PCIE2 x1 Slot (e.g. Intel I226-V 8086:125c at 02:00.0 when populated)*   |
+|  +-- 00:1c.3 PCIe RP4 -> Realtek RTL8111 (10ec:8168) -> r8169 eno0 (WOL S4 _PRW)                  |
 |  +-- 00:1f.2 SATA AHCI (8086:1c02, map 0x33)  -> SATA_0 (P0), SATA_1 (P1), SATA_2 (P4), SATA_3(P5)|
 |  +-- 00:1f.3 SMBus (8086:1c22, I/O 0x400)     -> SPD 0x50 / 0x52 (i2c_i801 / ee1004)              |
-|  +-- 00:1f.0 SPI Bus  -> Socketed U3 (DIP-8 W25Q64 8 MiB: IFD 4K + ME 1532K + BIOS 6.5M)          |
-|  +-- 00:1f.0 LPC Bus (33 MHz CLK_PCH_PORT80 free-running: GEN_PMCON_1=0x0a10, LPC_EN=0x3c0b)      |
-|        +-- 18-pin LPC/TPM1 Header (Port 0x80 POST & optional discrete TPM)                        |
+|  +-- 00:1f.0 SPI Bus  -> Socketed U3 (W25Q32 4 MiB or W25Q64 8 MiB; Stock/Compat 0x180000 or Min-ME 0x020000)|
+|  +-- 00:1f.0 LPC Bus (33 MHz CLK_PCH_PORT80 free-running: GEN_PMCON_1=0x0a10, LPC_EN=0x3c0f, GCS.RPR=0)|
+|        +-- 18-pin LPC/TPM1 Header (Port 0x80 POST Coreboot+EDK2 0xE1..0xE8 & TIS TPM 0xfed40000)  |
 |        +-- U1007 Nuvoton NCT6776F/D Super I/O (PNP 0x2e, ID 0xc333, HWM 0x290)                    |
-|              +-- LDN 0x01 LPT1     : DISABLED at boot (CR 0x30=0x00, no PNP0400, no parport0)      |
+|              +-- LDN 0x01 LPT1     : 0x378 IRQ5 DRQ4 CRf0=0x38 (PNP0400, /dev/parport0, SPP)      |
 |              +-- LDN 0x02 COM1     : 0x3f8 IRQ4 -> U11 RS-232 -> COM1 DB9 (/dev/ttyS0 115200 8N1) |
 |              +-- LDN 0x05 KBC      : 0x60/0x64 IRQ1/12 -> PS/2 Keyboard & Mouse (PNP0303/PNP0F13) |
 |              +-- LDN 0x0b HWM/FLED : 0x290 -> CPU_FAN1 (Bank2), CHA_FAN1 (Bank1), PLED- (CR 0xf7) |
 +---------------------------------------------------------------------------------------------------+
-* PCH PCIe Port Remap Note: Because PCIE2 (RP1) is unpopulated, Coreboot maps onboard RTL8111 (RP4, DID 8086:1c16) to BDF 00:1c.0 (ACPI RP01).
+* PCH PCIe Port Remap Note: When PCIE2 (pcie_rp1) is empty, Coreboot remaps RTL8111 (pcie_rp4) to 00:1c.0 -> 02:00.0; when PCIE2 holds a card (e.g. Intel I226-V), PCIE2 takes 00:1c.0 -> 02:00.0 and RTL8111 takes 00:1c.3 -> 03:00.0 (`eno0` via Netplan MAC match).
 ```
 
 ---
@@ -125,12 +124,12 @@ flowchart TB
 | **Intel ME Interface** | Embedded ME `8.1.20.1336` (`FREG2`) | `00:16.0` (`8086:1c3a`, `< 4 GiB` `0xdebf7000`) | `bd82x6x/me.c` | `mei_me` (`/dev/mei0`) |
 | **SPI Flash (`W25Q64`)** | `U3` Socketed DIP-8 (`ef 40 17`, `8 MiB`) | `PCH SPI` (`0xfed1f800` RCBA SPIBAR, mapped `0xff800000`) | `board/Kconfig` (`8192 KiB`), `SMMSTORE` (`0x190000`) | `flashrom -p internal -c "W25Q64BV/W25Q64CV/W25Q64FV" --ifd -i bios` |
 | **Serial Console (`COM1`)** | `U1007` `LDN 0x02` -> `U11` transceiver -> `COM1` DB9 | I/O `0x3f8`, IRQ `4`, ACPI `PNP0501`, `115200 8N1` | `devicetree.cb` (`2e.2` + globals), `early_init.c`, `acpi/superio.asl` | `8250_pnp` (`/dev/ttyS0`, `serial-getty@ttyS0.service`) |
-| **Parallel Port (`LPT1`)** | `U1007` `LDN 0x01` -> DB25 `LPT1` header | **Disabled at boot** (`LDN 0x01 CR 0x30=0x00`, `LPC_EN[2]=0`) | `devicetree.cb` (`2e.1 off`), `early_init.c`, `mainboard.c`, `acpi/superio.asl` | Absent (no `PNP0400`, no `0x378`, no `parport0`) |
+| **Parallel Port (`LPT1`)** | `U1007` `LDN 0x01` -> DB25 `LPT1` header | **Enabled** (`0x378`, IRQ `5`, DRQ `4`, `CRf0=0x38` SPP, `LPC_EN[2]=1`) | `devicetree.cb` (`2e.1 on`), `early_init.c` (`lpt_setup`), `mainboard.c`, `acpi/superio.asl` | `parport_pc` (`/dev/parport0`, `PNP0400`, `0378-037a`) |
 | **PS/2 KB & Mouse** | `U1007` `LDN 0x05` -> Stacked PS/2 / KB/MS ports | I/O `0x60`/`0x64`, IRQ `1`/`12`, ACPI `PNP0303`/`PNP0F13` | `devicetree.cb` (`2e.5 on`), `acpi/superio.asl` | `i8042`, `atkbd`, `psmouse` |
 | **Sensors & SmartFan IV** | `U1007` `LDN 0x0b` -> `CPU_FAN1` (Bank 2), `CHA_FAN1` (Bank 1), `PECI0` (pin 115) | LPC I/O `0x290..0x29f` (`gen1_dec`), `PECI0` | `mainboard.c` (`platform_late_init`), `cfr.c` (`fan_profile`) | `nct6775` (`/sys/class/hwmon/hwmon0`, `pwm1`/`pwm2` mode `5`) |
 | **Front-Panel `PLED-`** | `U1007` `LDN 0x08` (`GP10`=`GRN_LED`) + `LDN 0x0b` `CR 0xf7` | `CR 0xf7`: `0x07` (S0 steady), `0x44` (S3 0.5 Hz blink), `0x00` (S4/S5 off) | `early_init.c` (`sio_pled_steady_on`), `smihandler.c` (`mainboard_smi_sleep`) | Autonomous Super I/O & SMM hardware state |
-| **`LPC/TPM1` Header** | 18-pin `LPC/TPM1` header (`CLK_PCH_PORT80` pin 1) | LPC Port `0x80`, `GEN_PMCON_1=0x0a10` (`CLKRUN=0`) | `board/Kconfig` (`DEFAULT_POST_ON_LPC`), `mainboard.c` | Port `0x80` POST hardware reader / optional discrete TPM |
-| **UEFI Variable Store** | `W25Q64` FMAP `SMMSTORE` (`0x190000–0x1cffff`, `256 KiB`) | EFI GUID `ceae4c1d-335b-4685-a4a0-fc4a94eea085` | `cfr.c` (`CFR_OPTFLAG_RUNTIME`), EDK2 `CfrSetupMenuDxe` | `efivarfs` (`/sys/firmware/efi/efivars/*-ceae4c1d-...`), `h61_coreboot_config.py` |
+| **`LPC/TPM1` Header** | 18-pin `LPC/TPM1` header (`CLK_PCH_PORT80` pin 1) | LPC Port `0x80`, `RCBA_GCS=0x00000c21` (`RPR=0`), `GEN_PMCON_1=0x0a10`, TPM `0xfed40000` | `board/Kconfig` (`DEFAULT_POST_ON_LPC`, `MAINBOARD_HAS_TPM1`, `MEMORY_MAPPED_TPM`), `devicetree.cb` (`0c31.0`), `mainboard.c`, `PlatformBootManager.c` (`0xE1..0xE8`) | Hardware LPC POST reader / TIS 1.2 TPM (`tpm_tis`) when populated |
+| **UEFI Variable Store** | `FMAP` `SMMSTORE` (`256 KiB` at `0x190000` or `0x030000`) | EFI GUID `ceae4c1d-335b-4685-a4a0-fc4a94eea085` | `cfr.c` + `bd82x6x/cfr.c` (`CFR_OPTFLAG_RUNTIME`), EDK2 `CfrSetupMenuDxe` | `efivarfs` (`/sys/firmware/efi/efivars/*-ceae4c1d-...`), `h61_coreboot_config.py` (10 options) |
 
 ---
 
@@ -181,8 +180,8 @@ Verified against vendor `SBPEI.efi` GPIO override table, live `inteltool -G`, an
   `CR 0x13=0xff`, `0x14=0xff`, `0x1b=0x68`, `0x1c=0x80`, `0x24=0x5c` (`48 MHz` from `GPIO67`), `0x27=0x80`, `0x2a=0x60` (**enables COM1 pins**), `0x2c=0x80`, `0x2f=0x03`.
 - **Logical Devices**:
   - `LDN 0x00` (FDC): Off (`CR 0x30=0x00`).
-  - `LDN 0x01` (**LPT1**): **Off** (`CR 0x30=0x00`, `#undef NCT6776_SHOW_PP`, `LPC_EN[2]=0`).
-  - `LDN 0x02` (**COM1**): **On** (`0x3f8`, `IRQ 4`, `CR 0x30=0x01`, `U11` RS-232 transceiver).
+- `LDN 0x01` (**LPT1**): **On** (`0x378`, `IRQ 5`, `DRQ 4`, `CR 0x30=0x01`, `CR 0xf0=0x38` SPP/bi-directional, `#define NCT6776_SHOW_PP`, `LPC_EN[2]=1`).
+- `LDN 0x02` (**COM1**): **On** (`0x3f8`, `IRQ 4`, `CR 0x30=0x01`, `U11` RS-232 transceiver).
   - `LDN 0x05` (**KBC**): **On** (`0x60`/`0x64`, `IRQ 1`/`12`, `CR 0xf0=0x83`).
   - `LDN 0x08 / 0x308` (**WDT1 + GPIO1**): WDT1 off (`CR 0xf5=0x00`); **`CR 0xf0=0xd8, 0xf1=0x1e, 0xf4=0x01`** muxes **`GP10` to `GRN_LED`** (`PLED-`).
   - `LDN 0x0a` (**ACPI**): `CR 0xe0=0x01`, `0xe6=0x4c`, `0xf0=0x40`, `0xf2=0x5c`, `0xf7=0xc0`.
@@ -205,12 +204,26 @@ Verified against vendor `SBPEI.efi` GPIO override table, live `inteltool -G`, an
 
 ---
 
-## 7. SPI Flash Layout (`W25Q64`, 8 MiB `0x000000–0x7fffff`)
+## 7. SPI Flash Layouts (`W25Q32` 4 MiB & `W25Q64` 8 MiB Across Stock & Minimal ME)
 
-| Flash Offset | Size | IFD / FMAP Region | Lock Status (`flashrom -p internal`) | Contents |
-|---|---:|---|---|---|
-| `0x000000–0x000fff` | 4 KiB | `FREG0` Descriptor (`IFD`) | Read-Only | Clock straps, `FLREG1 = 0x07ff0180` (8 MiB BIOS end) |
-| `0x001000–0x17ffff` | 1,532 KiB | `FREG2` Intel ME | Locked (`R/W` blocked internally) | Stock ME `8.1.20.1336` or `me_cleaner.py -S` reduced ME |
-| `0x180000–0x18ffff` | 64 KiB | `RW_MRC_CACHE` (in `FREG1` BIOS) | Read-Write | Cached Sandy/Ivy Bridge DDR3 training data |
-| `0x190000–0x1cffff` | 256 KiB | `SMMSTORE` (in `FREG1` BIOS) | Read-Write (via SMM / UEFI RT) | UEFI NVRAM + all 9 Coreboot CFR runtime options |
-| `0x1d0000–0x7fffff` | 6,336 KiB | `COREBOOT` CBFS (in `FREG1` BIOS) | Read-Write (`--ifd -i bios`) | `bootblock`, `romstage`, `ramstage`, `postcar`, `cpu_microcode_blob.bin`, `dsdt.aml`, `UEFIPAYLOAD.fd`, `~4.5 MiB` free |
+All 4 released IFDs set **`FLMSTR1 = 0xffff0000`** (Host CPU full R/W once flashed externally, enabling future whole-chip internal `flashrom` updates).
+
+### Layout A — Stock / Compat ME (`BIOS` starts at `0x180000`, `FLREG2 = 0x017f0001`)
+
+| Flash Offset | Size | IFD / FMAP Region | Contents |
+|---|---:|---|---|
+| `0x000000–0x000fff` | 4 KiB | `FREG0` Descriptor (`IFD`) | Clock straps; `FLREG1 = 0x03ff0180` (`W25Q32` 4M) or `0x07ff0180` (`W25Q64` 8M) |
+| `0x001000–0x17ffff` | 1,532 KiB | `FREG2` Intel ME | Stock ME `8.1.20.1336` (`4M`) or `me_cleaner -S -d` compat (`8M`) |
+| `0x180000–0x18ffff` | 64 KiB | `RW_MRC_CACHE` (in `FREG1`) | Cached Sandy/Ivy Bridge DDR3 training data |
+| `0x190000–0x1cffff` | 256 KiB | `SMMSTORE` (in `FREG1`) | UEFI NVRAM + all 10 Coreboot CFR runtime options |
+| `0x1d0000–end` | `2,240 KiB` (`4M`) / `6,336 KiB` (`8M`) | `COREBOOT` CBFS (in `FREG1`) | Coreboot stages, microcode, `vbt.bin`, `UEFIPAYLOAD.fd` (`~313 KiB` free on 4M / `~4.4 MiB` free on 8M) |
+
+### Layout B — Minimal Relocated ME (`124 KiB`, `AltMeDisable=1`, `BIOS` starts at `0x020000`, `FLREG2 = 0x001f0001`)
+
+| Flash Offset | Size | IFD / FMAP Region | Contents |
+|---|---:|---|---|
+| `0x000000–0x000fff` | 4 KiB | `FREG0` Descriptor (`IFD`) | `AltMeDisable=1`, `FLMSTR1=0xffff0000`, `FLREG1 = 0x03ff0020` (`W25Q32` 4M) or `0x07ff0020` (`W25Q64` 8M) |
+| `0x001000–0x01ffff` | 124 KiB | `FREG2` Minimal ME | `me_cleaner.py -S -r -t -d` (`ROMP` + `BUP` `96 KiB` `FTPR`, `0xff`-padded to 64 KiB block boundary) |
+| `0x020000–0x02ffff` | 64 KiB | `RW_MRC_CACHE` (in `FREG1`) | Cached Sandy/Ivy Bridge DDR3 training data |
+| `0x030000–0x06ffff` | 256 KiB | `SMMSTORE` (in `FREG1`) | UEFI NVRAM + all 10 Coreboot CFR runtime options |
+| `0x070000–end` | `3,648 KiB` (`4M`) / `7,744 KiB` (`8M`) | `COREBOOT` CBFS (in `FREG1`) | Coreboot stages, microcode, `vbt.bin`, `UEFIPAYLOAD.fd` (`~1.7 MiB` free on 4M / `~5.8 MiB` free on 8M) |

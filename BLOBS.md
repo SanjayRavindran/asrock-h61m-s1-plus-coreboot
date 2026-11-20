@@ -9,27 +9,46 @@
 [**Hardware Report**](docs/HARDWARE-REPORT.md)
 
 > [!IMPORTANT]
-> This repository contains **open-source code, configuration, patches, build/configuration scripts, and documentation only**. Proprietary motherboard vendor binaries (Intel Flash Descriptor, Intel Management Engine firmware, and the stock desktop Video BIOS Table) are **never** committed to Git or bundled inside public GitHub Release binaries.
+> Since **`v26.11.3`**, this repository and its public GitHub Releases **include all required motherboard/chipset binary blobs in [`blobs/`](blobs/)** alongside the complete, ready-to-flash **4 MiB (`W25Q32`)** and **8 MiB (`W25Q64`)** SPI ROM images (as well as pure BIOS-region slices, `.defconfig` files, and source patches for anyone who wants to inspect or rebuild from scratch).
 
 ---
 
-## 1. Components Required for a Complete 8 MiB Flashable Image
+## 1. Committed Blobs in [`blobs/`](blobs/)
 
-| Component | Flash Region / File | Provenance & Official Download | SHA-256 (`v26.11.2` Tested Hardware Baseline) | License / Redistribution |
-|---|---|---|---|---|
-| **Coreboot Firmware (`bios-region`)** | `0x180000–0x7fffff` (`6,815,744` B) | Built from [coreboot/coreboot](https://github.com/coreboot/coreboot) (`df45ea2c49b4c7f6a1d2a969934cf6c6a2cb9018`) + this repository's board port & chipset patch | • **Release (`vbt.bin`-free)**: `f01b9226e07e44209aeb9d8995a4aaa8e7d0e3bb92495f9125d4dbd185021f96`<br>• **With local `vbt.bin`**: `2e6add5822c29cb5d41ce2c4cc78cf393e4eb5eba907d7e020e57109d83b9426` | Open-source (`GPL-2.0-only` / `GPL-2.0-or-later`) |
-| **EDK2 `UefiPayloadPkg`** | `fallback/payload` in CBFS | [mrchromebox/edk2](https://github.com/mrchromebox/edk2) (`f248a68be339831b69a880d9c932a6a3cf3c461a`, `uefipayload_2608` tree) | Built from source during Coreboot `make` | `BSD-2-Clause-Patent` ([`LICENSES/BSD-2-Clause-Patent.txt`](LICENSES/BSD-2-Clause-Patent.txt)) |
-| **Intel CPU Microcode** | `cpu_microcode_blob.bin` (`26,624` B) | [intel/Intel-Linux-Processor-Microcode-Data-Files](https://github.com/intel/Intel-Linux-Processor-Microcode-Data-Files) (`06-3a-09` rev `0x21`, `06-2a-07` rev `0x2f` — latest upstream) | Bundled via Coreboot `3rdparty/intel-microcode` | [`LICENSES/Intel-Microcode-License.txt`](LICENSES/Intel-Microcode-License.txt) |
-| **Intel Flash Descriptor (`IFD`)** | `0x000000–0x000fff` (`4,096` B) | Extracted from your own stock SPI dump or [ASRock H61M-S1 PLUS (`P1.10`)](https://www.asrock.com/mb/Intel/H61M-S1%20PLUS/index.asp) and resized to 8 MiB (`FLREG1 = 0x07ff0180`) by [`scripts/assemble_full_rom.sh`](scripts/assemble_full_rom.sh) | • **Stock 4 MiB IFD**: `b751064c357c3a2028c784e1f183c096cd250733351fc1985b767f19e7b164cc`<br>• **Resized 8 MiB IFD**: `b57a922ac505e534f0b12e624193e2d007b721fc2fa452204cb2562f82eecf83` | Proprietary (Intel / ASRock); supply from your own backup |
-| **Intel ME `8.1.20.1336`** | `0x001000–0x17ffff` (`1,568,768` B) | Extracted from your own stock SPI dump; optionally stripped/disabled via [corna/me_cleaner](https://github.com/corna/me_cleaner) (`me_cleaner.py -S`) | • **Stock ME**: `c9c21e3144b7211df19ac52bdecbe4dfd504c2f139c2db6d94728df8226c93df` | Proprietary (Intel); supply from your own backup |
-| **Desktop VBT (`vbt.bin`)** *(Optional)* | `vbt.bin` in CBFS (`3,902` B) | Extracted from stock ASRock AMI `CSMCORE` (`$VBT SNB/IVB-DESKTOP`, VBT 1.00 / BDB 1.66) via `UEFIExtract` / `UEFITool` | `c6500a60f9cf76ac3c554e0c6dfe80611463b8a2c2a85e0988a0195907baa193` | Proprietary (Intel / ASRock); stripped from public release artifacts |
-
-> [!TIP]
-> Use [`scripts/assemble_full_rom.sh`](scripts/assemble_full_rom.sh) to automatically extract the 4 KiB IFD and 1.5 MiB ME region from your stock 4 MiB or 8 MiB dump, patch `FLREG1` for 8 MiB (`W25Q64`), and stitch the 6.5 MiB Coreboot BIOS region into a complete `8,388,608`-byte flashable ROM.
+| Blob File | Size (Bytes) | SHA-256 | Provenance & Purpose | License / Redistribution |
+|---|---:|---|---|---|
+| [`blobs/data.vbt`](blobs/data.vbt) | `3,902` | `c6500a60f9cf76ac3c554e0c6dfe80611463b8a2c2a85e0988a0195907baa193` | Desktop Video BIOS Table (`$VBT SNB/IVB-DESKTOP`, VBT 1.00 / BDB 1.66) extracted from stock ASRock `H61M-S1 PLUS` `CSMCORE`; injected into CBFS as `vbt.bin` | Proprietary Intel / ASRock OEM VBT (redistributed unmodified for ASRock H61M-S1 PLUS `libgfxinit`/GOP display parity) |
+| [`blobs/me-stock-8.1.20.1336.bin`](blobs/me-stock-8.1.20.1336.bin) | `1,568,768` | `c9c21e3144b7211df19ac52bdecbe4dfd504c2f139c2db6d94728df8226c93df` | Stock Intel ME `8.1.20.1336` (`0x001000..0x17ffff`, 15 partitions, `FTPR` RSA valid) from physical `W25Q32` dump | Proprietary Intel / ASRock ME (used in `w25q32-4mb-stock-me`) |
+| [`blobs/me-cleaned-1532k-compat.bin`](blobs/me-cleaned-1532k-compat.bin) | `1,568,768` | `4bfc580ca91958cd62e80a61c46064ac5cdb8099690d3ff62667ebcf808bd842` | `me_cleaner.py -S -d` cleaned ME preserving stock `0x180000` BIOS offset (`FTPR` RSA valid, non-essential partitions removed) | Derived via Coreboot `util/me_cleaner/me_cleaner.py` (GPL-3.0) from stock ME |
+| [`blobs/me-minimal-124k.bin`](blobs/me-minimal-124k.bin) | `126,976` | `c96a4d75067b79b8185d032fca67e5351110bfb020e705608e3416e81976d2d8` | Minimal `me_cleaner.py -S -r -t -d` relocated `FTPR` (`ROMP` + `BUP`, `98,304` B raw) `0xff`-padded to `0x1f000` (`124 KiB`) so `BIOS` aligns on `0x020000` | Derived via `me_cleaner.py` (`AltMeDisable=1` + valid `FTPR` prevents Cougar Point 30-min watchdog reset) |
+| [`blobs/ifd-8mb-minimal-me-unlocked.bin`](blobs/ifd-8mb-minimal-me-unlocked.bin) | `4,096` | `e7ead7f6de31dc866c61c9eb83a4c41605ef000b06f27322feb1f0769aa76054` | Host-unlocked (`FLMSTR1=0xffff0000`, `FLMSTR2=0x04040000`) 8 MiB IFD: `AltMeDisable=1`, `FLREG2=0x001f0001`, `FLREG1=0x07ff0020`, `Density=8MB` | Intel Flash Descriptor generated via `ifdtool` / `me_cleaner.py` |
+| [`blobs/ifd-8mb-mecleaned-compat-unlocked.bin`](blobs/ifd-8mb-mecleaned-compat-unlocked.bin) | `4,096` | `829a0dbc3fad48f7d8712f1cf346017ec50e36b84e47ed15bb633cb25835a459` | Host-unlocked (`FLMSTR1=0xffff0000`, `FLMSTR2=0x04040000`) 8 MiB IFD: `AltMeDisable=1`, `FLREG2=0x017f0001`, `FLREG1=0x07ff0180`, `Density=8MB` | Intel Flash Descriptor (for `W25Q64` `0x180000` compat layout) |
+| [`blobs/ifd-4mb-minimal-me-unlocked.bin`](blobs/ifd-4mb-minimal-me-unlocked.bin) | `4,096` | `28a71d1d5d09e054bc1d48dde7de88159d8cb24c8dbd826fdf7ae040a64692a1` | Host-unlocked (`FLMSTR1=0xffff0000`, `FLMSTR2=0x04040000`) 4 MiB IFD: `AltMeDisable=1`, `FLREG2=0x001f0001`, `FLREG1=0x03ff0020`, `Density=4MB` | Intel Flash Descriptor (for `W25Q32` `124 KiB` minimal-ME layout) |
+| [`blobs/ifd-4mb-stock-unlocked.bin`](blobs/ifd-4mb-stock-unlocked.bin) | `4,096` | `1f683134faa1a5138794d2ee87a1d7e82f4d076002bb889febd9867fd447bb7b` | Host-unlocked (`FLMSTR1=0xffff0000`, `FLMSTR2=0x00000000`) 4 MiB IFD: `AltMeDisable=0`, `FLREG2=0x017f0001`, `FLREG1=0x03ff0180`, `Density=4MB` | Intel Flash Descriptor (for `W25Q32` `0x180000` stock-ME layout) |
 
 ---
 
-## 2. Two Verified Stock OEM BIOS Backups (Local Recovery Reference)
+## 2. Why Cougar Point H61 Needs `124 KiB` Minimal ME (`ROMP` + `BUP`) Instead of Zero ME
+
+On Intel 6-Series (`Cougar Point`, H61 `8086:1c5c`), wiping the Intel ME SPI region completely triggers an internal hardware **ME watchdog reset/power-off after 30 minutes** because `FTPR` (`ROMP` + `BUP`) is missing or fails RSA verification at hardware bring-up. Running `me_cleaner.py -S -r -t -d`:
+1. Strips every non-essential ME runtime module (`KERNEL`, `POLICY`, network/AMT/manageability partitions) down to only `FTPR` (`ROMP` + `BUP`, **`98,304` B** raw), preserving a **valid Intel RSA signature**.
+2. Relocates `FTPR` to the bottom of `FREG2` and sets **`AltMeDisable = 1`** in PCH Strap 10 inside the IFD (`Halt` / disable ME right after basic clock/power init).
+3. Pads `me-minimal-124k.bin` with `0xff` up to **`126,976` B (`0x1f000`)** so the Coreboot `BIOS` (`FREG1`) region starts cleanly on a **64 KiB FMAP boundary (`0x020000`)** — expanding usable `COREBOOT` flash space to **`7.875 MiB`** on `W25Q64` and **`3.875 MiB`** on `W25Q32`.
+
+> [!NOTE]
+> All 4 IFD blobs set **`FLMSTR1 = 0xffff0000`** so once flashed with an external SPI programmer, future updates to IFD, ME, and BIOS can all be performed directly from Linux via `flashrom -p internal`. If your board currently boots with a vendor-locked IFD (`FREG2` locked internally), flash `w25q64-8mb-mecleaned-compat-full.rom` via `flashrom -p internal --ifd -i bios` (updates `FREG1` only), or pull socketed DIP-8 `U3` once and flash `w25q64-8mb-minimal-me-full.rom` externally to reclaim all `7.875 MiB` + enable `AltMeDisable=1` + permanently unlock `FLMSTR1`.
+
+---
+
+## 3. Open-Source Firmware & Reproduction Components
+
+| Component | Version / Pin | Provenance | License |
+|---|---|---|---|
+| **Coreboot Core & Board Port** | Commit `df45ea2c49b4` + [`patches/0001-sandybridge-h61m-s1-plus-igd-raminit.patch`](patches/0001-sandybridge-h61m-s1-plus-igd-raminit.patch) | [coreboot/coreboot](https://github.com/coreboot/coreboot) + [`board/`](board/) | `GPL-2.0-only` / `GPL-2.0-or-later` |
+| **EDK2 `UefiPayloadPkg`** | Commit `f248a68be339` + [`patches/0002-edk2-delete-key-usb-boot-menu.patch`](patches/0002-edk2-delete-key-usb-boot-menu.patch) | [mrchromebox/edk2](https://github.com/mrchromebox/edk2) (`uefipayload_2608` tree) | `BSD-2-Clause-Patent` ([`LICENSES/BSD-2-Clause-Patent.txt`](LICENSES/BSD-2-Clause-Patent.txt)) |
+| **Intel CPU Microcode** | `06-3a-09` rev `0x21`, `06-2a-07` rev `0x2f` (`26,624` B) | Coreboot `3rdparty/intel-microcode` ([Intel](https://github.com/intel/Intel-Linux-Processor-Microcode-Data-Files)) | [`LICENSES/Intel-Microcode-License.txt`](LICENSES/Intel-Microcode-License.txt) |
+
+### Master Stock OEM Reference Dumps (Checksums)
 
 | Backup Slot | File Name | Size | SHA-256 | Provenance |
 |---|---|---:|---|---|
@@ -38,8 +57,9 @@
 
 ---
 
-## 3. Operating System Peripheral Firmware (Loaded by Linux, Not in SPI ROM)
+## 4. Operating System Peripheral Firmware (Loaded by Linux, Not in SPI ROM)
 
-- **Realtek RTL8111/8168E LAN (`02:00.0`, `10ec:8168`, XID `2c9`)**: Uses `rtl_nic/rtl8168e-3.fw` from upstream Linux `linux-firmware` ([kernel.org `linux-firmware`](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/rtl_nic)).
+- **Realtek RTL8111/8168E LAN (`10ec:8168`, XID `2c9`)**: Uses `rtl_nic/rtl8168e-3.fw` from upstream Linux `linux-firmware` ([kernel.org `linux-firmware`](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/rtl_nic)).
+- **Intel I226-V 2.5GbE Add-in NIC (`8086:125c`, when populated in `PCIE2`)**: Driven natively by mainline Linux `igc`.
 - **NVIDIA Tesla P4 (`01:00.0`, `10de:1bb3`)**: Uses its own onboard GPU SPI VBIOS (`86.04.8C.00.10`); requires no CBFS VBIOS blob.
 - **Audio (`ALC662 rev1`), Super I/O (`NCT6776F/D`), VRMs (`RT8876`/`RT9624`), and H61 PCH**: Fixed-function / SVID hardware with zero field-updatable firmware.

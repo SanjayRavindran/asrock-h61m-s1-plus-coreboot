@@ -44,7 +44,9 @@ FS_IMMUTABLE_FL = 0x00000010
 FS_IOC_GETFLAGS = 0x80086601
 FS_IOC_SETFLAGS = 0x40086602
 
-FLASHROM_CHIP = "W25Q64BV/W25Q64CV/W25Q64FV"
+FLASHROM_CHIP_8MIB = "W25Q64BV/W25Q64CV/W25Q64FV"
+FLASHROM_CHIP_4MIB = "W25Q32BV/W25Q32CV/W25Q32FV"
+ROM_SIZE_4MIB = 4 * 1024 * 1024
 ROM_SIZE_8MIB = 8 * 1024 * 1024
 DEFAULT_NIC = "eno0"
 
@@ -130,6 +132,16 @@ CFR_OPTIONS: List[CfrOption] = [
         choices={0: "Disabled", 1: "Enabled"},
         aliases={"off": 0, "disabled": 0, "on": 1, "enabled": 1},
         helptext="Enable or disable hardware Non-Maskable Interrupts.",
+    ),
+    CfrOption(
+        name="me_state",
+        ui_name="Intel ME Boot State",
+        form="System",
+        kind="enum",
+        default=0,
+        choices={0: "Normal (Enabled)", 1: "Disabled (Soft Temp Disable)"},
+        aliases={"normal": 0, "on": 0, "enable": 0, "enabled": 0, "off": 1, "disable": 1, "disabled": 1},
+        helptext="Enable or HECI Soft-Temporary-Disable Intel Management Engine (requires reboot).",
     ),
     CfrOption(
         name="fan_profile",
@@ -523,41 +535,58 @@ def suspend_s3(wake_seconds: Optional[int] = None) -> Tuple[bool, str]:
                 pass
 
 
-def flashrom_backup_bios(out_path: pathlib.Path) -> Tuple[bool, str]:
+def _flashrom_chip_for_size(rom_size: Optional[int] = None, chip_override: Optional[str] = None) -> Optional[str]:
+    if chip_override:
+        return chip_override
+    if rom_size == ROM_SIZE_4MIB:
+        return FLASHROM_CHIP_4MIB
+    if rom_size == ROM_SIZE_8MIB:
+        return FLASHROM_CHIP_8MIB
+    return FLASHROM_CHIP_8MIB
+
+
+def flashrom_backup_bios(out_path: pathlib.Path, chip: Optional[str] = None) -> Tuple[bool, str]:
     if os.geteuid() != 0:
         return False, "flashrom requires root privileges (sudo)."
     fr = shutil.which("flashrom")
     if not fr:
         return False, "flashrom binary not found."
-    cmd = [fr, "-p", "internal", "-c", FLASHROM_CHIP, "--ifd", "-i", "bios", "-r", str(out_path)]
+    cmd = [fr, "-p", "internal"]
+    if chip:
+        cmd.extend(["-c", chip])
+    cmd.extend(["--ifd", "-i", "bios", "-r", str(out_path)])
     rc, out, err = run_cmd(cmd, timeout=180)
+    if rc != 0 and not chip:
+        cmd = [fr, "-p", "internal", "-c", FLASHROM_CHIP_8MIB, "--ifd", "-i", "bios", "-r", str(out_path)]
+        rc, out, err = run_cmd(cmd, timeout=180)
     if rc != 0:
         return False, (err or out).strip()
     return True, f"Read current SPI BIOS region cleanly via flashrom ({out_path})."
 
 
-def flashrom_write_bios(rom_path: pathlib.Path) -> Tuple[bool, str]:
+def flashrom_write_bios(rom_path: pathlib.Path, chip: Optional[str] = None) -> Tuple[bool, str]:
     if os.geteuid() != 0:
         return False, "flashrom requires root privileges (sudo)."
     if not rom_path.exists():
         return False, f"Image not found: {rom_path}"
     sz = rom_path.stat().st_size
-    if sz != ROM_SIZE_8MIB:
+    if sz not in (ROM_SIZE_4MIB, ROM_SIZE_8MIB):
         return False, (
-            f"Expected complete 8 MiB ({ROM_SIZE_8MIB} B) flash image for '--ifd -i bios' "
-            f"address alignment, got {sz} B."
+            f"Expected complete 4 MiB ({ROM_SIZE_4MIB} B) or 8 MiB ({ROM_SIZE_8MIB} B) "
+            f"flash image for '--ifd -i bios' address alignment, got {sz} B."
         )
     fr = shutil.which("flashrom")
     if not fr:
         return False, "flashrom binary not found."
-    cmd = [
-        fr, "-p", "internal", "-c", FLASHROM_CHIP,
-        "--ifd", "-i", "bios", "--noverify-all", "-w", str(rom_path),
-    ]
+    target_chip = _flashrom_chip_for_size(sz, chip)
+    cmd = [fr, "-p", "internal"]
+    if target_chip:
+        cmd.extend(["-c", target_chip])
+    cmd.extend(["--ifd", "-i", "bios", "--noverify-all", "-w", str(rom_path)])
     rc, out, err = run_cmd(cmd, timeout=240)
     if rc != 0 or "VERIFIED" not in out:
         return False, (out + "\n" + err).strip()
-    return True, "SPI BIOS region flashed and VERIFIED cleanly (IFD/ME preserved)."
+    return True, f"SPI BIOS region ({sz // (1024 * 1024)} MiB) flashed and VERIFIED cleanly (IFD/ME preserved)."
 
 
 def backup_cfr_json(out_path: pathlib.Path, efivars_dir: pathlib.Path = EFIVARS_DIR) -> Dict[str, object]:
@@ -614,7 +643,7 @@ def self_test(efivars_dir: pathlib.Path = EFIVARS_DIR) -> Tuple[bool, List[str]]
     logs.append(f"  {DEFAULT_NIC} WOL                : active={wol['active']} (supports={wol['supports']})")
     sensors = get_sensors()
     logs.append(f"  hwmon devices           : {', '.join(str(s['name']) for s in sensors) or 'none'}")
-    ok = present == len(CFR_OPTIONS) and bool(io["com1_03f8_active"]) and not bool(io["lpt1_0378_active"])
+    ok = present == len(CFR_OPTIONS) and bool(io["com1_03f8_active"]) and bool(io["lpt1_0378_active"])
     return ok, logs
 
 
@@ -788,10 +817,10 @@ class H61Tui:
     def _draw_flash_tab(self, h: int, w: int) -> None:
         self._safe_addn(4, 2, "Profile Export/Import & Internal SPI BIOS Flash Helpers:", w - 4, curses.A_BOLD)
         actions = [
-            ("backup_cfr", "Backup CFR Options to JSON", "Writes all 9 current CFR variables to a JSON file"),
+            ("backup_cfr", "Backup CFR Options to JSON", f"Writes all {len(CFR_OPTIONS)} current CFR variables to a JSON file"),
             ("restore_cfr", "Restore CFR Options from JSON", "Loads & writes CFR options from a JSON backup"),
-            ("backup_spi", "Backup SPI BIOS Region (flashrom)", f"Reads 0x180000..0x7fffff on {FLASHROM_CHIP} (read-only)"),
-            ("flash_spi", "Flash SPI BIOS Region (flashrom)", "Writes BIOS region ONLY (requires 8 MiB ROM + 'FLASH' confirm)"),
+            ("backup_spi", "Backup SPI BIOS Region (flashrom)", "Reads BIOS region via flashrom --ifd -i bios (read-only)"),
+            ("flash_spi", "Flash SPI BIOS Region (flashrom)", "Writes BIOS region ONLY (requires 4/8 MiB ROM + 'FLASH' confirm)"),
         ]
         sel = self.cursor[3]
         for i, (_, name, desc) in enumerate(actions):
@@ -915,7 +944,7 @@ class H61Tui:
                 ok, msg = flashrom_backup_bios(pathlib.Path(path_s))
                 self.status_msg = msg
             elif idx == 3:
-                path_s = self._prompt_input("Path to 8 MiB ROM for BIOS-region flash: ")
+                path_s = self._prompt_input("Path to 4/8 MiB ROM for BIOS-region flash: ")
                 if path_s:
                     conf = self._prompt_input("Type FLASH to write SPI BIOS region now: ")
                     if conf == "FLASH":
@@ -958,7 +987,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd")
 
     sub.add_parser("tui", help="Launch interactive curses TUI (default when no command given)")
-    sub.add_parser("list", help="List all 9 Coreboot CFR options and live values")
+    sub.add_parser("list", help=f"List all {len(CFR_OPTIONS)} Coreboot CFR options and live values")
 
     pg = sub.add_parser("get", help="Get one CFR option value")
     pg.add_argument("option", choices=list(CFR_BY_NAME.keys()))
@@ -993,12 +1022,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     pbb = sub.add_parser("backup-bios", help="Read current SPI BIOS region using flashrom")
     pbb.add_argument("out", type=pathlib.Path)
+    pbb.add_argument("--chip", default=None, help="Optional flashrom -c chip override")
 
-    pfb = sub.add_parser("flash-bios", help="Safely flash SPI BIOS region ONLY from 8 MiB ROM (--ifd -i bios)")
+    pfb = sub.add_parser("flash-bios", help="Safely flash SPI BIOS region ONLY from 4/8 MiB ROM (--ifd -i bios)")
     pfb.add_argument("rom", type=pathlib.Path)
+    pfb.add_argument("--chip", default=None, help="Optional flashrom -c chip override")
     pfb.add_argument("--yes", action="store_true", help="Skip interactive FLASH confirmation")
 
-    sub.add_parser("self-test", help="Verify runtime CFR efivars, COM1-only/LPT-disabled, WOL, and hwmon")
+    sub.add_parser("self-test", help="Verify runtime CFR efivars, COM1+LPT1 active, WOL, and hwmon")
     return p
 
 
@@ -1098,17 +1129,18 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0 if ok else 1
 
     if cmd == "backup-bios":
-        ok, msg = flashrom_backup_bios(args.out)
+        ok, msg = flashrom_backup_bios(args.out, args.chip)
         print(msg)
         return 0 if ok else 1
 
     if cmd == "flash-bios":
         if not args.yes:
-            ans = input(f"Flash SPI BIOS region on {FLASHROM_CHIP} from {args.rom}? Type FLASH to proceed: ").strip()
+            chip_hint = args.chip or "auto (W25Q32/W25Q64)"
+            ans = input(f"Flash SPI BIOS region ({chip_hint}) from {args.rom}? Type FLASH to proceed: ").strip()
             if ans != "FLASH":
                 print("Cancelled.")
                 return 1
-        ok, msg = flashrom_write_bios(args.rom)
+        ok, msg = flashrom_write_bios(args.rom, args.chip)
         print(msg)
         return 0 if ok else 1
 

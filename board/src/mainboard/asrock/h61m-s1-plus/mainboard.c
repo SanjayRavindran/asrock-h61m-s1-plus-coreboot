@@ -92,15 +92,25 @@ static void platform_late_init(void *arg)
 		pmcon1 &= ~(3 << 2);
 		pci_write_config16(lpc, GEN_PMCON_1, pmcon1);
 
-		/* Disable PCH LPT decode (0x378-0x37f); keep COM1 and LPC Port 0x80 active */
+		/* Enable PCH LPT1 (0x378-0x37f), COM1 (0x3f8-0x3ff), and LPC Port 0x80 */
 		u16 lpc_en = pci_read_config16(lpc, LPC_EN);
-		lpc_en &= ~LPT_LPC_EN;
+		lpc_en |= LPT_LPC_EN | COMA_LPC_EN;
 		pci_write_config16(lpc, LPC_EN, lpc_en);
 
-		printk(BIOS_INFO, "LPC: GEN_PMCON_1=0x%04x RCBA_GCS=0x%08x LPC_EN=0x%04x\n",
+		u16 lpc_io_dec = pci_read_config16(lpc, LPC_IO_DEC);
+		lpc_io_dec &= ~((0x3 << 8) | (0x7 << 0)); /* LPT=0x378, COMA=0x3f8 */
+		pci_write_config16(lpc, LPC_IO_DEC, lpc_io_dec);
+
+		/* Route Port 0x80 POST codes to LPC (GCS.RPR = 0) if GCS is not locked */
+		if (!(RCBA32(GCS) & 0x1))
+			RCBA32(GCS) &= ~0x04;
+
+		printk(BIOS_INFO,
+		       "LPC: GEN_PMCON_1=0x%04x RCBA_GCS=0x%08x LPC_EN=0x%04x LPC_IO_DEC=0x%04x\n",
 		       pci_read_config16(lpc, GEN_PMCON_1),
 		       RCBA32(GCS),
-		       pci_read_config16(lpc, LPC_EN));
+		       pci_read_config16(lpc, LPC_EN),
+		       pci_read_config16(lpc, LPC_IO_DEC));
 	}
 }
 

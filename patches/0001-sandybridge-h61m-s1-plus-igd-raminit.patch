@@ -222,6 +222,18 @@ index 4eeb3b5c..ffab9a63 100644
  	.set_resources		= pci_dev_set_resources,
  	.enable_resources	= pci_dev_enable_resources,
  	.init			= azalia_init,
+diff --git a/src/southbridge/intel/bd82x6x/cfr.c b/src/southbridge/intel/bd82x6x/cfr.c
+index 26363b57..92373e9d 100644
+--- a/src/southbridge/intel/bd82x6x/cfr.c
++++ b/src/southbridge/intel/bd82x6x/cfr.c
+@@ -6,6 +6,7 @@
+ 
+ /* Intel ME State */
+ static const struct sm_object me_state = SM_DECLARE_ENUM({
++	.flags		= CFR_OPTFLAG_RUNTIME,
+ 	.opt_name	= "me_state",
+ 	.ui_name	= "Boot State",
+ 	.ui_helptext	= "Enable or disable the Intel Management Engine",
 diff --git a/src/southbridge/intel/bd82x6x/me.c b/src/southbridge/intel/bd82x6x/me.c
 index 1682c7d3..d9353dd7 100644
 --- a/src/southbridge/intel/bd82x6x/me.c

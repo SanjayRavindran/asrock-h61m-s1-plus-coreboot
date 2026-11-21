@@ -89,6 +89,14 @@ Captured `COM5` boot (`229,124` bytes to `h61 login:`): `HWM: Applying SmartFan 
 - **`sudo h61-coreboot-config self-test`**: **`RESULT: PASS`** across all **10** runtime CFR options (`attrs=0x00000007 present=True`), `COM1 (0x3f8) active: True`, `LPT1 (0x378) active: True`, `UEFI Secure Boot: Disabled (UserMode, keys_enrolled=True, PK=1575B KEK=3066B db=7636B dbx=21416B)`, `NCT6776 M/B Temp: 32.0 C`, `NCT6776 CPU Temp (PECI): 33.5 C`, `CHA_FAN1=1909 RPM, CPU_FAN1=1728 RPM`, and **`NCT6776 HWM alarms: 0 (none) [CI1 open/unjumpered]`**.
 - **`sudo h61-coreboot-config status`**: Reported scaled `Vcore=0.752V, +12V=10.666V, AVCC=3.392V, +3.3V=3.392V, +5V=5.208V, 3VSB=3.456V, Vbat=3.280V`, `pwm1=34.9% (PWM, en=5, src=7)`, `pwm2=29.8% (PWM, en=5, src=7)`, `Tesla P4: 35 C, 10.12 W`, zero `sudo dmesg` `i915` forcewake/error messages (`I915_SUDO_DMESG_CLEAN`), and `MEI_PCI_00_16_0: ''` (hidden by `me_smm.c`).
 
+### 4. Combined GPU (`Tesla P4 >= 60°C -> 100%`) + CPU Fan Control (`h61-fan-control.service`)
+- Installed [`scripts/h61_fan_control.py`](../scripts/h61_fan_control.py) (`/usr/local/bin/h61-fan-control`) + [`configs/h61-fan-control.service`](../configs/h61-fan-control.service) on `h61` (`systemd` enabled & `active`), polling NVML GPU temp + `PECI Agent 0` + `SYSTIN` every 2s (`max(gpu_curve, cpu_curve, mb_curve)` with `2.0°C` cooldown hysteresis).
+- **Live Verification Results (`h61`)**:
+  - `h61-fan-control --self-test`: **`RESULT: PASS`** (all 11 thermal-curve & hysteresis checks).
+  - **Live `GPU=61.0°C` Override Test (`6s`)**: `pwm1`/`pwm2` jumped immediately to **`255/255` (`100%`)**, spinning `CHA_FAN1` up to **`4770–4787 RPM`** and restoring SmartFan IV `mode 5` cleanly on exit.
+  - **Fail-Safe Restoration**: `systemctl stop` restored `pwm1_enable=5`, `pwm2_enable=5` via `ExecStopPost`; `systemctl start` resumed `active` (`pwm1_enable=1`, `pwm2_enable=1`).
+  - **10s CPU Load Test Under Daemon**: Ramped `pwm1`/`pwm2` smoothly from `76/255` (`1628 RPM`) -> `150/255` (`2986 RPM`) during load (`PECI0` `34.0 -> 59.5°C`), then stepped back cleanly (`3082 -> 2311 RPM`, `pwm=99/255`) during cooldown (`h61-coreboot-config self-test` -> **`RESULT: PASS`**, `[fanctl] h61-fan-control: active`).
+
 ---
 
 ## Carried-Forward Hardware Verifications (`v26.11.4` Baseline)

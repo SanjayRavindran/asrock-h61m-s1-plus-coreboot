@@ -155,6 +155,11 @@ sudo install -m 0755 scripts/h61_coreboot_config.py /usr/local/bin/h61-coreboot-
 sudo install -m 0644 configs/asrock-h61m-s1-plus-sensors.conf /etc/sensors.d/asrock-h61m-s1-plus.conf
 sudo sensors -s && sensors
 
+# Optional: Combined Tesla P4 GPU (>= 60 C -> 100%) + CPU PECI0 fan controller (auto fallback to mode 5)
+sudo install -m 0755 scripts/h61_fan_control.py /usr/local/bin/h61-fan-control
+sudo install -m 0644 configs/h61-fan-control.service /etc/systemd/system/h61-fan-control.service
+sudo systemctl daemon-reload && sudo systemctl enable --now h61-fan-control.service
+
 sudo h61-coreboot-config                   # Interactive 4-tab curses TUI
 sudo h61-coreboot-config self-test         # Verify 10 CFR efivars, COM1, LPT1, WOL, & NCT6776 HWM
 sudo h61-coreboot-config status            # Live system telemetry, scaled volts, fans, PWMs, & GPU
@@ -200,7 +205,7 @@ COREBOOT_DIR="$PWD/coreboot" RELEASE_TAG="v26.11.5" bash scripts/build_all_roms.
 ├── LICENSES/                               # GPL-2.0, BSD-2-Clause-Patent, Intel Microcode licenses
 ├── blobs/                                  # Committed IFD (4M/8M unlocked), ME (stock/compat/minimal-124k), & data.vbt
 ├── board/src/mainboard/asrock/h61m-s1-plus/# Coreboot mainboard port (COM1+LPT1, LPC/TPM1, 10 CFR, SmartFan IV, NCT6776 HWM)
-├── configs/                                # 4 variant defconfigs (4M/8M stock/minimal-ME) + lm-sensors board conf
+├── configs/                                # 4 variant defconfigs, lm-sensors conf, & h61-fan-control.service
 ├── docs/                                   # Features catalog, CPU list, hardware map, porting lessons, live report
 ├── patches/
 │   ├── 0001-sandybridge-h61m-s1-plus-igd-raminit.patch          # <4G clamp, NRI/PEG, me_state CFR runtime flag
@@ -210,7 +215,8 @@ COREBOOT_DIR="$PWD/coreboot" RELEASE_TAG="v26.11.5" bash scripts/build_all_roms.
 │   ├── build_all_roms.sh                   # Builds & validates all 4 W25Q32/W25Q64 full ROMs + SHA256SUMS.txt
 │   ├── build.sh                            # Single-variant Coreboot + EDK2 builder & ifdtool/me_cleaner validator
 │   ├── assemble_full_rom.sh                # Stitches 4M/8M IFD + ME + BIOS region (+ optional VBT & me_cleaner)
-│   └── h61_coreboot_config.py              # Linux OS runtime 10-option CFR TUI & CLI configurator
+│   ├── h61_coreboot_config.py              # Linux OS runtime 10-option CFR TUI & CLI configurator
+│   └── h61_fan_control.py                  # Fail-safe combined GPU (Tesla P4 >= 60C -> 100%) + CPU PWM daemon
 ├── BLOBS.md                                # Blob provenance, SHA-256 hashes, & 124 KiB minimal-ME layout notes
 └── README.md                               # Project overview & software-to-hardware connection map
 ```

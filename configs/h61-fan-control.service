@@ -1,0 +1,14 @@
+[Unit]
+Description=ASRock H61M-S1 PLUS Combined GPU (Tesla P4 >= 60C -> 100%%) and CPU Fan Controller
+After=multi-user.target lm-sensors.service nvidia-vgpu-mgr.service
+Wants=lm-sensors.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/h61-fan-control
+ExecStopPost=/usr/local/bin/h61-fan-control --restore-hw
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -436,6 +436,17 @@ def get_gpu_sensors() -> List[Dict[str, str]]:
     return gpus
 
 
+def get_fan_daemon_state() -> str:
+    """Return systemd state of h61-fan-control.service ('active', 'inactive', or 'not installed')."""
+    if not pathlib.Path("/etc/systemd/system/h61-fan-control.service").exists() and not pathlib.Path("/lib/systemd/system/h61-fan-control.service").exists():
+        return "not installed"
+    sctl = shutil.which("systemctl")
+    if not sctl:
+        return "unknown"
+    _, out, _ = run_cmd([sctl, "is-active", "h61-fan-control.service"], timeout=5)
+    return out.strip() or "inactive"
+
+
 def get_wol(iface: str = DEFAULT_NIC) -> Dict[str, str]:
     ethtool = shutil.which("ethtool")
     if not ethtool:
@@ -863,6 +874,7 @@ class H61Tui:
         self.sys_info = get_system_info()
         self.sensors = get_sensors()
         self.gpu_sensors = get_gpu_sensors()
+        self.fan_daemon = get_fan_daemon_state()
 
     def _safe_addn(self, y: int, x: int, text: str, width: int, attr: int = 0) -> None:
         h, w = self.stdscr.getmaxyx()
@@ -1010,6 +1022,7 @@ class H61Tui:
             lines.append("[GPU : nvidia-smi]")
             for g in self.gpu_sensors:
                 lines.append(f"  {g['name']}: {g['temp_c']}C, {g['power']}")
+        lines.append(f"[FanCtl] h61-fan-control: {self.fan_daemon}")
         offset = self.cursor[2]
         visible = h - 10
         offset = max(0, min(offset, max(0, len(lines) - visible)))
@@ -1328,6 +1341,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             print("  [gpu] nvidia-smi:")
             for g in gpus:
                 print(f"    {g['name']}: {g['temp_c']} C, {g['power']}")
+        print(f"  [fanctl] h61-fan-control: {get_fan_daemon_state()}")
         return 0
 
     if cmd == "wol":

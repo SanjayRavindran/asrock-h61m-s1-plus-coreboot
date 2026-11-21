@@ -83,6 +83,7 @@ jobs:
           bash scripts/build_all_roms.sh
           cp -f patches/0001-sandybridge-h61m-s1-plus-igd-raminit.patch release-out/
           cp -f patches/0002-edk2-delete-key-usb-boot-menu.patch release-out/
+          cp -f patches/0003-edk2-cf9-reset-and-secureboot-components.patch release-out/
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -130,7 +131,7 @@ jobs:
 
           ### Included Supporting Assets
           - Per-variant BIOS-region slices (`*-bios-region.bin`), `cbfs-layout-*.txt`, `*.defconfig`
-          - `0001-sandybridge-h61m-s1-plus-igd-raminit.patch` & `0002-edk2-delete-key-usb-boot-menu.patch`
+          - `0001-sandybridge-h61m-s1-plus-igd-raminit.patch`, `0002-edk2-delete-key-usb-boot-menu.patch`, & `0003-edk2-cf9-reset-and-secureboot-components.patch`
           - `SHA256SUMS.txt`
 
           See [`BLOBS.md`](BLOBS.md) and [`README.md`](README.md) for flashing instructions, hardware test logs, and disclaimers.""")

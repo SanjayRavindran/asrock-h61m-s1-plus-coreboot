@@ -45,7 +45,7 @@ On Intel 6-Series (`Cougar Point`, H61 `8086:1c5c`), wiping the Intel ME SPI reg
 | Component | Version / Pin | Provenance | License |
 |---|---|---|---|
 | **Coreboot Core & Board Port** | Commit `df45ea2c49b4` + [`patches/0001-sandybridge-h61m-s1-plus-igd-raminit.patch`](patches/0001-sandybridge-h61m-s1-plus-igd-raminit.patch) | [coreboot/coreboot](https://github.com/coreboot/coreboot) + [`board/`](board/) | `GPL-2.0-only` / `GPL-2.0-or-later` |
-| **EDK2 `UefiPayloadPkg`** | Commit `f248a68be339` + [`patches/0002-edk2-delete-key-usb-boot-menu.patch`](patches/0002-edk2-delete-key-usb-boot-menu.patch) | [mrchromebox/edk2](https://github.com/mrchromebox/edk2) (`uefipayload_2608` tree) | `BSD-2-Clause-Patent` ([`LICENSES/BSD-2-Clause-Patent.txt`](LICENSES/BSD-2-Clause-Patent.txt)) |
+| **EDK2 `UefiPayloadPkg`** | Commit `f248a68be339` + [`patches/0002-edk2-delete-key-usb-boot-menu.patch`](patches/0002-edk2-delete-key-usb-boot-menu.patch) + [`patches/0003-edk2-cf9-reset-and-secureboot-components.patch`](patches/0003-edk2-cf9-reset-and-secureboot-components.patch) | [mrchromebox/edk2](https://github.com/mrchromebox/edk2) (`uefipayload_2608` tree) | `BSD-2-Clause-Patent` ([`LICENSES/BSD-2-Clause-Patent.txt`](LICENSES/BSD-2-Clause-Patent.txt)) |
 | **Intel CPU Microcode** | `06-3a-09` rev `0x21`, `06-2a-07` rev `0x2f` (`26,624` B) | Coreboot `3rdparty/intel-microcode` ([Intel](https://github.com/intel/Intel-Linux-Processor-Microcode-Data-Files)) | [`LICENSES/Intel-Microcode-License.txt`](LICENSES/Intel-Microcode-License.txt) |
 
 ### Master Stock OEM Reference Dumps (Checksums)

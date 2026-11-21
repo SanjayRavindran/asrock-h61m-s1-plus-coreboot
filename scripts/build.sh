@@ -65,18 +65,21 @@ if [ ! -d "$EDK2_DIR/.git" ]; then
   git -C "$EDK2_DIR" submodule update --init --checkout --recursive
 fi
 
-PATCH2="$ROOT_DIR/patches/0002-edk2-delete-key-usb-boot-menu.patch"
-if [ -f "$PATCH2" ]; then
-  if git -C "$EDK2_DIR" apply --check "$PATCH2" >/dev/null 2>&1; then
-    git -C "$EDK2_DIR" apply "$PATCH2"
-    echo "Applied EDK2 Delete-key USB boot menu & Port 80 patch."
-  elif git -C "$EDK2_DIR" apply --reverse --check "$PATCH2" >/dev/null 2>&1; then
-    echo "EDK2 patch already applied."
-  else
-    echo "ERROR: Failed to apply $PATCH2 cleanly on $EDK2_DIR" >&2
-    exit 1
+for PATCH_EDK2 in \
+  "$ROOT_DIR/patches/0002-edk2-delete-key-usb-boot-menu.patch" \
+  "$ROOT_DIR/patches/0003-edk2-cf9-reset-and-secureboot-components.patch"; do
+  if [ -f "$PATCH_EDK2" ]; then
+    if git -C "$EDK2_DIR" apply --check "$PATCH_EDK2" >/dev/null 2>&1; then
+      git -C "$EDK2_DIR" apply "$PATCH_EDK2"
+      echo "Applied $(basename "$PATCH_EDK2")."
+    elif git -C "$EDK2_DIR" apply --reverse --check "$PATCH_EDK2" >/dev/null 2>&1; then
+      echo "$(basename "$PATCH_EDK2") already applied."
+    else
+      echo "ERROR: Failed to apply $PATCH_EDK2 cleanly on $EDK2_DIR" >&2
+      exit 1
+    fi
   fi
-fi
+done
 
 echo "[4/6] Generating .config from $DEFCONFIG"
 cp -f "$DEFCONFIG" .config
@@ -99,6 +102,27 @@ make -j"$(nproc)" UPDATED_SUBMODULES=1
 
 if [ -n "$EDK2_CACHE_FD" ] && [ ! -f "$EDK2_CACHE_FD" ] && [ -f build/UEFIPAYLOAD.fd ]; then
   cp -f build/UEFIPAYLOAD.fd "$EDK2_CACHE_FD"
+fi
+
+EDK2_REPORT="$COREBOOT_DIR/payloads/external/edk2/workspace/Build/UefiPayloadPkgX64/UEFIPAYLOAD.txt"
+if [ -f "$EDK2_REPORT" ]; then
+  echo "=== EDK2 MODULE AUDIT (NVMe & Secure Boot & Reset) ==="
+  for req_mod in \
+    NvmExpressDxe \
+    SecureBootConfigDxe \
+    EnrollDefaultKeys \
+    Pkcs7VerifyDxe \
+    RngDxe \
+    Hash2DxeCrypto \
+    DxeImageVerificationLib \
+    SecurityStubDxe \
+    ResetSystemRuntimeDxe; do
+    if ! grep -q "$req_mod" "$EDK2_REPORT"; then
+      echo "ERROR: Required EDK2 module '$req_mod' missing from $EDK2_REPORT!" >&2
+      exit 1
+    fi
+  done
+  echo "Verified all required NVMe, Secure Boot, and Reset modules in UEFIPAYLOAD.txt."
 fi
 
 echo "[6/6] Extracting BIOS region, validating layout, and assembling full ROM (if IFD/ME supplied)"

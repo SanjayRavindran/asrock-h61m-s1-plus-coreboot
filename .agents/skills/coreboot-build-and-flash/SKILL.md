@@ -8,13 +8,13 @@ description: >-
   artifacts to Windows, or planning internal/external SPI flashing.
 ---
 
-# ASRock H61M-S1 PLUS Coreboot Build & Flash Workflow (`v26.11.3`)
+# ASRock H61M-S1 PLUS Coreboot Build & Flash Workflow (`v26.11.4`)
 
 ## Environment & Immutable Backups
 
 - **Build Host**: `192.168.1.15` (SSH user `zero`, Ubuntu 26.04)
 - **Coreboot Tree**: `/home/zero/coreboot-work/h61m-s1-plus` (branch `h61m-s1-plus-port`, pinned Coreboot commit `df45ea2c49b4c7f6a1d2a969934cf6c6a2cb9018`) + [`patches/0001-sandybridge-h61m-s1-plus-igd-raminit.patch`](../../../patches/0001-sandybridge-h61m-s1-plus-igd-raminit.patch) (bus-0 `< 4 GiB` MMIO clamp, PEG bifurcation/NRI, `me_state` runtime CFR flag)
-- **EDK2 Payload**: `https://github.com/mrchromebox/edk2` pinned at `f248a68be339831b69a880d9c932a6a3cf3c461a` (`CONFIG_EDK2_RELEASE=y`, `CONFIG_EDK2_BOOT_MANAGER_ESCAPE=y`, `CONFIG_EDK2_CUSTOM_BUILD_PARAMS="-D BOOTSPLASH_IMAGE=FALSE"`, `5s` boot timeout) + [`patches/0002-edk2-delete-key-usb-boot-menu.patch`](../../../patches/0002-edk2-delete-key-usb-boot-menu.patch) (**CRLF line endings — never convert to LF!**)
+- **EDK2 Payload**: `https://github.com/mrchromebox/edk2` pinned at `f248a68be339831b69a880d9c932a6a3cf3c461a` (`CONFIG_EDK2_RELEASE=y`, `CONFIG_EDK2_BOOT_MANAGER_ESCAPE=y`, `CONFIG_EDK2_SECURE_BOOT_SUPPORT=y`, `CONFIG_EDK2_CUSTOM_BUILD_PARAMS="-D BOOTSPLASH_IMAGE=FALSE -D NVME_ENABLE=TRUE"`, `5s` boot timeout) + [`patches/0002-edk2-delete-key-usb-boot-menu.patch`](../../../patches/0002-edk2-delete-key-usb-boot-menu.patch) + [`patches/0003-edk2-cf9-reset-and-secureboot-components.patch`](../../../patches/0003-edk2-cf9-reset-and-secureboot-components.patch) (**CRLF line endings — never convert to LF!**)
 - **Board Target**: `src/mainboard/asrock/h61m-s1-plus/` (`BOARD_ASROCK_H61M_S1_PLUS`)
 - **Two Preserved Immutable OEM BIOS Backups (`chmod 400/444` on `.15` — NEVER modify or run `me_cleaner.py` without copying to `/tmp` + `-O`!)**:
   - **OEM Backup #1 (Physical Full-Chip Read)**: `~/coreboot-work/inputs/h61m-s1-plus-full-chip-read0.bin` on `.15` / [h61m-s1-plus-read0.bin](../../../H61M-S1+/h61m-s1-plus-read0.bin) on Windows (`4,194,304` B, SHA-256 `27cb55b24a644eb664790313631fd9ab681398e4a3ea9ec990d367f5539405bb`)
@@ -38,7 +38,7 @@ description: >-
 
 [`scripts/build_all_roms.sh`](../../../scripts/build_all_roms.sh) builds and validates all **4** `W25Q32` (`4 MiB`) and `W25Q64` (`8 MiB`) ROMs (caching `UEFIPAYLOAD.fd` across variants for speed):
 
-1. **Force a clean EDK2 rebuild when `patches/0002` changes**:
+1. **Force a clean EDK2 rebuild when `patches/0002` or `0003` changes**:
    ```bash
    rm -f /home/zero/coreboot-work/h61m-s1-plus/build/UEFIPAYLOAD.fd
    rm -rf /home/zero/coreboot-work/h61m-s1-plus/payloads/external/edk2/workspace/Build
@@ -47,11 +47,11 @@ description: >-
    ```bash
    cd /home/zero/coreboot-work/asrock-h61m-s1-plus-coreboot
    COREBOOT_DIR=/home/zero/coreboot-work/h61m-s1-plus \
-   OUT_DIR=/home/zero/coreboot-work/outputs/v26.11.3-build \
-   RELEASE_TAG=v26.11.3 \
+   OUT_DIR=/home/zero/coreboot-work/outputs/v26.11.4-build \
+   RELEASE_TAG=v26.11.4 \
      bash scripts/build_all_roms.sh
    ```
-3. Or build a single custom variant with `DEFCONFIG=... VARIANT_NAME=... IFD_FILE=... ME_FILE=... BIOS_OFFSET=... bash scripts/build.sh`.
+3. Or build a single custom variant with `DEFCONFIG=... VARIANT_NAME=... IFD_FILE=... ME_FILE=... BIOS_OFFSET=... bash scripts/build.sh`. (`scripts/build.sh` also audits `UEFIPAYLOAD.txt` to confirm `NvmExpressDxe`, `SecureBootConfigDxe`, `EnrollDefaultKeys`, `Pkcs7VerifyDxe`, `RngDxe`, `Hash2DxeCrypto`, `DxeImageVerificationLib`, `SecurityStubDxe`, and `ResetSystemRuntimeDxe`.)
 
 ## Structural Validation Checklist
 
@@ -66,8 +66,8 @@ description: >-
 - **Internal Flash (`flashrom` on booted `h61` with stock locked `FREG2`)**:
   - Can ONLY write `FREG1` (`0x180000+`); use `*-w25q64-8mb-mecleaned-compat-full.rom` (`8 MiB`) or `*-w25q32-4mb-stock-me-full.rom` (`4 MiB`):
     ```bash
-    sudo flashrom -p internal -c "W25Q64BV/W25Q64CV/W25Q64FV" --ifd -i bios --noverify-all -w h61m-s1-plus-coreboot-v26.11.3-w25q64-8mb-mecleaned-compat-full.rom
+    sudo flashrom -p internal -c "W25Q64BV/W25Q64CV/W25Q64FV" --ifd -i bios --noverify-all -w h61m-s1-plus-coreboot-v26.11.4-w25q64-8mb-mecleaned-compat-full.rom
     ```
 - **External SPI Flash (Recommended once on socketed DIP-8 `U3`)**:
   - To switch to the **Minimal ME (`124 KiB`, `AltMeDisable=1`, `FLMSTR1=0xffff0000`)** layout (`w25q64-8mb-minimal-me-full.rom` or `w25q32-4mb-minimal-me-full.rom`), flash once externally because stock `FREG2` locks internal writes to IFD/ME.
-- **Active ROMs**: Keep ONLY active `v26.11.3` build outputs in `/home/zero/coreboot-work/outputs/` on `.15` (and `outputs\v26.11.3\` on Windows, gitignored — NEVER commit `.rom` outputs to git). See [`docs/HARDWARE-REPORT.md`](../../../docs/HARDWARE-REPORT.md).
+- **Active ROMs**: Keep ONLY active `v26.11.4` build outputs in `/home/zero/coreboot-work/outputs/` on `.15` (and `outputs\v26.11.4\` on Windows, gitignored — NEVER commit `.rom` outputs to git). See [`docs/HARDWARE-REPORT.md`](../../../docs/HARDWARE-REPORT.md).

@@ -9,7 +9,7 @@
 [**Hardware Report**](HARDWARE-REPORT.md) ·
 [**Blobs & Licenses**](../BLOBS.md)
 
-This knowledge base consolidates every hardware discovery, boardview correlation, debugging breakthrough, and Linux integration pitfall uncovered while porting **Coreboot (`df45ea2c49b4`) + EDK2 `UefiPayloadPkg` (`f248a68be339`)** from a stock 4 MiB AMI Aptio `P1.10` BIOS to verified **4 MiB (`W25Q32`) & 8 MiB (`W25Q64`)** open-source firmware releases (`v26.11.3`).
+This knowledge base consolidates every hardware discovery, boardview correlation, debugging breakthrough, and Linux integration pitfall uncovered while porting **Coreboot (`df45ea2c49b4`) + EDK2 `UefiPayloadPkg` (`f248a68be339`)** from a stock 4 MiB AMI Aptio `P1.10` BIOS to verified **4 MiB (`W25Q32`) & 8 MiB (`W25Q64`)** open-source firmware releases (`v26.11.4`).
 
 > [!IMPORTANT]
 > **Top 4 Takeaways for Intel 6/7-Series (Sandy/Ivy Bridge + Cougar Point) Coreboot Ports**:
@@ -21,7 +21,7 @@ This knowledge base consolidates every hardware discovery, boardview correlation
 ## Table of Contents
 
 1. [Pre-Port Reconnaissance & Board Identity](#1-pre-port-reconnaissance--board-identity)
-2. [Critical Silicon & Firmware Bugs Solved (Bugs 1–12)](#2-critical-silicon--firmware-bugs-solved)
+2. [Critical Silicon & Firmware Bugs Solved (Bugs 1–13)](#2-critical-silicon--firmware-bugs-solved)
 3. [Linux OS & Tooling Lessons Learned (`h61`, Ubuntu `7.0.0-43-generic`)](#3-linux-os--tooling-lessons-learned-h61-ubuntu-700-43-generic)
 
 ---
@@ -91,6 +91,11 @@ This knowledge base consolidates every hardware discovery, boardview correlation
   1. Setting runtime CFR `me_state=1` (`Disabled / Soft Temp Disable`) in a locked stock-IFD boot triggers Coreboot's ME 7 MKHI `enter_soft_temp_disable()` call, logging `ME: response is not complete` / `failed to enter Soft Temporary Disable mode` (~1.3s stall).
   2. Regardless, Coreboot's SMM (`me_smm.c`: `RCBA32_OR(FD2, PCH_DISABLE_MEI1)`) hides PCI `00:16.0` from Linux before OS handoff (`lspci -s 00:16.0` empty!).
   3. **Takeaway**: Keep `me_state=0` (`Normal`) when running stock `FREG2`; use external SPI programming with `w25q64-8mb-minimal-me-full.rom` (`124 KiB` stripped ME + `AltMeDisable=1` + `FLMSTR1=0xffff0000`) for physical hardware ME disabling + permanent full-chip internal flashing.
+
+### Bug 13: GRUB `"UEFI Firmware Settings"` (`fwsetup` / `EfiResetCold`) Shutting Down Instead of Resetting
+- **Symptoms**: Selecting **UEFI Firmware Settings** from a USB installer / Ubuntu GRUB menu (or invoking `EfiResetCold` / `OsIndications` = `EFI_OS_INDICATIONS_BOOT_TO_FW_UI`) powered off the H61M-S1 PLUS instead of automatically resetting into UEFI Setup (`UiApp`); turning power back on manually then landed in UEFI Setup (because `OsIndications` had persisted in `SMMSTORE`).
+- **Root Cause**: MrChromebox's `UefiPayloadPkg/Library/ResetSystemLib/ResetSystemLib.c` overrides Coreboot's FADT reset register (`0xcf9`, `RESET_VALUE = 0x06`) with `0x0a -> 0x0e` (`LEGACY_RESET_FULL`, setting `CF9 BIT3`). On Cougar Point `H61` + `NCT6776F` (`LDN 0x0a`, AC power-loss `S5`), asserting `FULL_RST` (`BIT3`) drops `SLP_S5#` / `PSON#` into power-off rather than restarting! *(Linux kernel `reboot` succeeded because Linux honored Coreboot FADT `0x06` directly without setting `BIT3`.)*
+- **Fix (`patches/0003-edk2-cf9-reset-and-secureboot-components.patch`)**: Changed `ResetCold()` (and `ResetWarm()` when `ResetValue == 0x06`) in `ResetSystemLib.c` from `0x0a -> 0x0e` (`LEGACY_RESET_FULL`) to `0x02 -> 0x06` (`LEGACY_RESET_SYSTEM` -> `LEGACY_RESET_CPU | LEGACY_RESET_SYSTEM`). Now GRUB `fwsetup` immediately resets and automatically enters UEFI Setup (`UiApp`) with zero power loss.
 
 ---
 

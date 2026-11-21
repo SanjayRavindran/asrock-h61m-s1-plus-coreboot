@@ -1,0 +1,87 @@
+diff --git a/UefiPayloadPkg/Library/ResetSystemLib/ResetSystemLib.c b/UefiPayloadPkg/Library/ResetSystemLib/ResetSystemLib.c
+index d2ae455d33..7b3c97eb06 100644
+--- a/UefiPayloadPkg/Library/ResetSystemLib/ResetSystemLib.c
++++ b/UefiPayloadPkg/Library/ResetSystemLib/ResetSystemLib.c
+@@ -105,13 +105,14 @@ ResetCold (
+   AsmWbinvd ();
+   if (mAcpiBoardInfo.ResetRegAddress == LEGACY_RESET_CONTROL_REG) {
+     //
+-    // Coreboot FADT often advertises CF9 with reset value 0x06. Writing that
+-    // alone can conflict with the full-reset sequence; use 0x0a then 0x0e.
++    // Coreboot FADT advertises CF9 with reset value 0x06 (hard reset without
++    // SLP_S5# power-off/FULL_RST, which powers down boards when S5 AC power-loss
++    // recovery is set to off). Use the 0x02 then 0x06 reset sequence.
+     //
+-    IoWrite8 (LEGACY_RESET_CONTROL_REG, LEGACY_RESET_FULL | LEGACY_RESET_SYSTEM);
++    IoWrite8 (LEGACY_RESET_CONTROL_REG, LEGACY_RESET_SYSTEM);
+     IoWrite8 (
+       LEGACY_RESET_CONTROL_REG,
+-      LEGACY_RESET_FULL | LEGACY_RESET_CPU | LEGACY_RESET_SYSTEM
++      LEGACY_RESET_CPU | LEGACY_RESET_SYSTEM
+       );
+   } else {
+     IoWrite8 ((UINTN)mAcpiBoardInfo.ResetRegAddress, mAcpiBoardInfo.ResetValue);
+@@ -137,7 +138,18 @@ ResetWarm (
+   // Keep the warm reset path consistent with cold reset for capsule updates.
+   //
+   AsmWbinvd ();
+-  IoWrite8 ((UINTN)mAcpiBoardInfo.ResetRegAddress, mAcpiBoardInfo.ResetValue);
++  if ((mAcpiBoardInfo.ResetRegAddress == LEGACY_RESET_CONTROL_REG) &&
++      (mAcpiBoardInfo.ResetValue == (LEGACY_RESET_CPU | LEGACY_RESET_SYSTEM)))
++  {
++    IoWrite8 (LEGACY_RESET_CONTROL_REG, LEGACY_RESET_SYSTEM);
++    IoWrite8 (
++      LEGACY_RESET_CONTROL_REG,
++      LEGACY_RESET_CPU | LEGACY_RESET_SYSTEM
++      );
++  } else {
++    IoWrite8 ((UINTN)mAcpiBoardInfo.ResetRegAddress, mAcpiBoardInfo.ResetValue);
++  }
++
+   CpuDeadLoop ();
+ }
+ 
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.dsc b/UefiPayloadPkg/UefiPayloadPkg.dsc
+index 7a028eb129..11ff6af442 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.dsc
++++ b/UefiPayloadPkg/UefiPayloadPkg.dsc
+@@ -1219,6 +1219,11 @@
+ !if $(SECURE_BOOT_ENABLE) == TRUE
+   SecurityPkg/VariableAuthenticated/SecureBootConfigDxe/SecureBootConfigDxe.inf
+   UefiPayloadPkg/EnrollDefaultKeys/EnrollDefaultKeys.inf
++  SecurityPkg/Pkcs7Verify/Pkcs7VerifyDxe/Pkcs7VerifyDxe.inf
++  !if $(NETWORK_DRIVER_ENABLE) == FALSE
++    SecurityPkg/RandomNumberGenerator/RngDxe/RngDxe.inf
++    SecurityPkg/Hash2DxeCrypto/Hash2DxeCrypto.inf
++  !endif
+ !endif
+ 
+   MdeModulePkg/Universal/BdsDxe/BdsDxe.inf
+diff --git a/UefiPayloadPkg/UefiPayloadPkg.fdf b/UefiPayloadPkg/UefiPayloadPkg.fdf
+index 17a007a989..039edaef4d 100644
+--- a/UefiPayloadPkg/UefiPayloadPkg.fdf
++++ b/UefiPayloadPkg/UefiPayloadPkg.fdf
+@@ -271,6 +271,11 @@ INF MdeModulePkg/Universal/ResetSystemRuntimeDxe/ResetSystemRuntimeDxe.inf
+   !if $(SECURE_BOOT_ENABLE) == TRUE
+     INF SecurityPkg/VariableAuthenticated/SecureBootConfigDxe/SecureBootConfigDxe.inf
+     INF UefiPayloadPkg/EnrollDefaultKeys/EnrollDefaultKeys.inf
++    INF SecurityPkg/Pkcs7Verify/Pkcs7VerifyDxe/Pkcs7VerifyDxe.inf
++    !if $(NETWORK_DRIVER_ENABLE) == FALSE
++      INF SecurityPkg/RandomNumberGenerator/RngDxe/RngDxe.inf
++      INF SecurityPkg/Hash2DxeCrypto/Hash2DxeCrypto.inf
++    !endif
+ 
+     FILE FREEFORM = 3d844ea9-e7da-48c5-a031-fa22b10f8d7b {
+       SECTION RAW = UefiPayloadPkg/EnrollDefaultKeys/keys/dbx_microsoft_baseline.bin
+@@ -564,6 +569,11 @@ READ_LOCK_STATUS   = TRUE
+ 
+ INF SecurityPkg/VariableAuthenticated/SecureBootConfigDxe/SecureBootConfigDxe.inf
+ INF UefiPayloadPkg/EnrollDefaultKeys/EnrollDefaultKeys.inf
++INF SecurityPkg/Pkcs7Verify/Pkcs7VerifyDxe/Pkcs7VerifyDxe.inf
++!if $(NETWORK_DRIVER_ENABLE) == FALSE
++INF SecurityPkg/RandomNumberGenerator/RngDxe/RngDxe.inf
++INF SecurityPkg/Hash2DxeCrypto/Hash2DxeCrypto.inf
++!endif
+ 
+ FILE FREEFORM = 3d844ea9-e7da-48c5-a031-fa22b10f8d7b {
+   SECTION RAW = UefiPayloadPkg/EnrollDefaultKeys/keys/dbx_microsoft_baseline.bin

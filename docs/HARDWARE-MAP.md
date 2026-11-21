@@ -9,7 +9,7 @@
 [**Hardware Report**](HARDWARE-REPORT.md) ·
 [**Blobs & Licenses**](../BLOBS.md)
 
-Authoritative wiring, register, PCI/ACPI/IRQ, Coreboot driver, and Linux sysfs map cross-verified against the **ASRock `H61M-VS4 G/A 1.00` (`H61M-S1 PLUS R1.01`) boardview**, Coreboot `v26.11.3` source code, `inteltool -G`, `/dev/port`, and live Ubuntu `7.0.0-43-generic` telemetry (`h61`).
+Authoritative wiring, register, PCI/ACPI/IRQ, Coreboot driver, and Linux sysfs map cross-verified against the **ASRock `H61M-VS4 G/A 1.00` (`H61M-S1 PLUS R1.01`) boardview**, Coreboot `v26.11.4` source code, `inteltool -G`, `/dev/port`, and live Ubuntu `7.0.0-43-generic` telemetry (`h61`).
 
 > [!NOTE]
 > Every pin, PCI BDF, I/O port, MMIO base, and GPIO direction in this document is cross-checked against the physical boardview netlist and live runtime measurements (`lspci -vvv`, `/dev/port`, `inteltool -G`).

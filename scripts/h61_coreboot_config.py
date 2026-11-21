@@ -439,6 +439,76 @@ def detect_io_ports() -> Dict[str, object]:
     }
 
 
+EFI_GLOBAL_GUID = "8be4df61-93ca-11d2-aa0d-00e098032b8c"
+EFI_IMAGE_SECURITY_GUID = "d719b2cb-3d3a-4596-a3bc-dad00e67656f"
+
+
+def get_secure_boot_info(efivars_dir: pathlib.Path = EFIVARS_DIR) -> Dict[str, object]:
+    """Inspect UEFI Secure Boot runtime variables and enrolled key stores in efivars."""
+    def _read_u8(name: str, guid: str) -> Optional[int]:
+        p = efivars_dir / f"{name}-{guid}"
+        if not p.exists():
+            return None
+        try:
+            raw = p.read_bytes()
+            return raw[4] if len(raw) >= 5 else None
+        except OSError:
+            return None
+
+    def _var_size(name: str, guid: str) -> int:
+        p = efivars_dir / f"{name}-{guid}"
+        try:
+            return max(0, p.stat().st_size - 4) if p.exists() else 0
+        except OSError:
+            return 0
+
+    sb = _read_u8("SecureBoot", EFI_GLOBAL_GUID)
+    sm = _read_u8("SetupMode", EFI_GLOBAL_GUID)
+    vk = _read_u8("VendorKeys", EFI_GLOBAL_GUID)
+    pk_sz = _var_size("PK", EFI_GLOBAL_GUID)
+    kek_sz = _var_size("KEK", EFI_GLOBAL_GUID)
+    db_sz = _var_size("db", EFI_IMAGE_SECURITY_GUID)
+    dbx_sz = _var_size("dbx", EFI_IMAGE_SECURITY_GUID)
+    keys_enrolled = pk_sz > 0 and kek_sz > 0 and db_sz > 0
+    return {
+        "supported": sb is not None,
+        "enabled": sb == 1,
+        "setup_mode": sm == 1 if sm is not None else None,
+        "vendor_keys": vk == 1 if vk is not None else None,
+        "keys_enrolled": keys_enrolled,
+        "sizes": {"PK": pk_sz, "KEK": kek_sz, "db": db_sz, "dbx": dbx_sz},
+    }
+
+
+def get_nvme_devices() -> List[Dict[str, str]]:
+    """Detect NVMe PCIe controllers and block namespaces exposed by Linux."""
+    devs: List[Dict[str, str]] = []
+    seen_pci = set()
+    nvme_sys = pathlib.Path("/sys/class/nvme")
+    if nvme_sys.exists():
+        for ctrl in sorted(nvme_sys.iterdir()):
+            model = read_text_safe(ctrl / "model", "NVMe Controller")
+            fw = read_text_safe(ctrl / "firmware_rev", "")
+            dev_link = ""
+            try:
+                dev_link = (ctrl / "device").resolve().name
+                seen_pci.add(dev_link)
+            except OSError:
+                pass
+            devs.append({"name": ctrl.name, "pci": dev_link, "model": model, "fw": fw})
+    pci_sys = pathlib.Path("/sys/bus/pci/devices")
+    if pci_sys.exists():
+        for pdev in sorted(pci_sys.iterdir()):
+            if pdev.name in seen_pci:
+                continue
+            cls = read_text_safe(pdev / "class", "")
+            if cls.startswith("0x0108"):
+                ven = read_text_safe(pdev / "vendor", "?")
+                did = read_text_safe(pdev / "device", "?")
+                devs.append({"name": pdev.name, "pci": pdev.name, "model": f"PCIe NVMe ({ven}:{did})", "fw": ""})
+    return devs
+
+
 def get_system_info() -> Dict[str, object]:
     dmi = pathlib.Path("/sys/class/dmi/id")
     cpu_model = ""
@@ -473,6 +543,8 @@ def get_system_info() -> Dict[str, object]:
         "nic_ip4": ip_out.strip(),
         "com1_active": io["com1_03f8_active"],
         "lpt1_active": io["lpt1_0378_active"],
+        "secure_boot": get_secure_boot_info(),
+        "nvme_devices": get_nvme_devices(),
         "efibootmgr": efiboot.strip(),
     }
 
@@ -641,6 +713,16 @@ def self_test(efivars_dir: pathlib.Path = EFIVARS_DIR) -> Tuple[bool, List[str]]
     logs.append(f"  LPT1 (0x378) active     : {io['lpt1_0378_active']}")
     wol = get_wol(DEFAULT_NIC)
     logs.append(f"  {DEFAULT_NIC} WOL                : active={wol['active']} (supports={wol['supports']})")
+    sb = get_secure_boot_info(efivars_dir if (efivars_dir / f"SecureBoot-{EFI_GLOBAL_GUID}").exists() else EFIVARS_DIR)
+    sb_state = "Enabled" if sb["enabled"] else ("Disabled" if sb["supported"] else "Unsupported")
+    sb_mode = "SetupMode" if sb["setup_mode"] else "UserMode"
+    sz = sb["sizes"]
+    logs.append(
+        f"  UEFI Secure Boot        : {sb_state} ({sb_mode}, keys_enrolled={sb['keys_enrolled']}, "
+        f"PK={sz['PK']}B KEK={sz['KEK']}B db={sz['db']}B dbx={sz['dbx']}B)"
+    )
+    nvmes = get_nvme_devices()
+    logs.append(f"  NVMe PCIe controllers   : {len(nvmes)} detected")
     sensors = get_sensors()
     logs.append(f"  hwmon devices           : {', '.join(str(s['name']) for s in sensors) or 'none'}")
     ok = present == len(CFR_OPTIONS) and bool(io["com1_03f8_active"]) and bool(io["lpt1_0378_active"])
@@ -787,10 +869,15 @@ class H61Tui:
 
     def _draw_sensors_tab(self, h: int, w: int) -> None:
         self._safe_addn(4, 2, "Live System Identity & Hardware Sensors (Press 'r' to refresh):", w - 4, curses.A_BOLD)
+        sb = self.sys_info.get("secure_boot") or {}
+        sb_str = f"{'ON' if sb.get('enabled') else 'OFF'} ({'Enrolled' if sb.get('keys_enrolled') else 'Unenrolled'})"
+        nvmes = self.sys_info.get("nvme_devices") or []
+        nvme_str = ", ".join(d.get("model", "NVMe") for d in nvmes) if nvmes else "none installed (NvmExpressDxe ready)"
         lines = [
             f"Board  : {self.sys_info.get('board')} | BIOS: {self.sys_info.get('bios_vendor')} {self.sys_info.get('bios_version')}",
             f"CPU    : {self.sys_info.get('cpu_model')} ({self.sys_info.get('cpu_threads')} threads) | RAM: {self.sys_info.get('mem_gib')} GiB",
             f"Network: {self.sys_info.get('nic_ip4') or 'down'} | COM1 (0x3f8): {'ACTIVE' if self.sys_info.get('com1_active') else 'OFF'} | LPT1 (0x378): {'ACTIVE' if self.sys_info.get('lpt1_active') else 'DISABLED'}",
+            f"SecBoot: {sb_str} | NVMe: {nvme_str}",
             "",
         ]
         for s in self.sensors:
@@ -1092,6 +1179,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"CPU    : {info['cpu_model']} ({info['cpu_threads']} threads) | RAM: {info['mem_gib']} GiB")
         print(f"NIC    : {info['nic_ip4']} | WOL: active={wol['active']} (supports={wol['supports']})")
         print(f"Serial : COM1 (0x3f8)={'ACTIVE' if info['com1_active'] else 'OFF'} | Parallel LPT1 (0x378)={'ACTIVE' if info['lpt1_active'] else 'DISABLED'}")
+        sb = info["secure_boot"]
+        sz = sb["sizes"]
+        sb_st = "Enabled" if sb["enabled"] else ("Disabled" if sb["supported"] else "Unsupported")
+        print(
+            f"SecBoot: {sb_st} ({'SetupMode' if sb['setup_mode'] else 'UserMode'}, "
+            f"VendorKeys={sb['vendor_keys']}, PK={sz['PK']}B KEK={sz['KEK']}B db={sz['db']}B dbx={sz['dbx']}B)"
+        )
+        nvmes = info["nvme_devices"]
+        print("NVMe   : " + (", ".join(f"{d['name']} ({d['model']})" for d in nvmes) if nvmes else "none installed (NvmExpressDxe enabled in UEFI)"))
         print("\nACPI Wakeup:")
         for r in get_acpi_wakeup():
             if r["status"] == "enabled" or r["device"] in ("RP01", "RP04", "PEGP", "EHC1", "EHC2", "PBTN"):

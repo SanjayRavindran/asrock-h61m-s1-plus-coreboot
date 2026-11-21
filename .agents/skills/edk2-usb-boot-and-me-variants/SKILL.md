@@ -8,11 +8,13 @@ description: >-
   and me_cleaner regions across 4 MiB and 8 MiB SPI flash chips.
 ---
 
-# EDK2 Delete-Key USB Boot Menu & Multi-Chip ME Variants (`v26.11.3`)
+# EDK2 Delete-Key USB Boot Menu, CF9 Reset, Secure Boot & ME Variants (`v26.11.4`)
 
-## 1. EDK2 Delete-Key USB Boot Menu & Port `0x80` (`patches/0002`)
+## 1. EDK2 Patches (`0002` & `0003`) & Critical CRLF Rule
 
-[`patches/0002-edk2-delete-key-usb-boot-menu.patch`](../../../patches/0002-edk2-delete-key-usb-boot-menu.patch) applies cleanly onto MrChromebox EDK2 commit `f248a68be339831b69a880d9c932a6a3cf3c461a` (`UefiPayloadPkg`) and modifies 7 upstream files:
+Two CRLF-preserving EDK2 patches apply cleanly onto MrChromebox EDK2 commit `f248a68be339831b69a880d9c932a6a3cf3c461a` (`UefiPayloadPkg`):
+- [`patches/0002-edk2-delete-key-usb-boot-menu.patch`](../../../patches/0002-edk2-delete-key-usb-boot-menu.patch): Delete-key USB Boot Menu, `TerminalTypePcAnsi` `\x1b[3~` decode, BDS Port `0x80` POST codes (`0xE1..0xE8`).
+- [`patches/0003-edk2-cf9-reset-and-secureboot-components.patch`](../../../patches/0003-edk2-cf9-reset-and-secureboot-components.patch): Fixes PCH CF9 cold/warm reset shutdown bug (`0x0a -> 0x0e` with `LEGACY_RESET_FULL` changed to `0x02 -> 0x06` matching Coreboot FADT) and adds `Pkcs7VerifyDxe` (+ `RngDxe` / `Hash2DxeCrypto` even when `NETWORK_DRIVER_ENABLE == FALSE`) alongside `SecureBootConfigDxe`, `EnrollDefaultKeys`, and `NvmExpressDxe`.
 
 ### A. Dedicated USB Selection Popup (`MdeModulePkg/Application/BootManagerMenuApp/`)
 - **`BootManagerMenu.{c,h}`, `BootManagerMenuApp.inf`, `BootManagerMenuStrings.uni`**:
@@ -36,9 +38,18 @@ description: >-
 - Upstream `TerminalConIn.c` only accepts VT220 `ESC [ 3 ~` (`\x1b[3~`) under `TerminalTypeTtyTerm`, causing `TerminalTypePcAnsi` to flush `\x1b[3~` via `UnicodeToEfiKeyFlushState()` as standalone `SCAN_ESC` (accidentally opening `UiApp` Setup!).
 - Our patch extends `TerminalConIn.c` (`INPUT_STATE_ESC | INPUT_STATE_LEFTOPENBRACKET` and `INPUT_STATE_LEFTOPENBRACKET_TTY`) to allow **both `TerminalTypeTtyTerm` and `TerminalTypePcAnsi`** to decode VT220 `ESC [ 3 ~` -> `SCAN_DELETE`, alongside `0x7f`, `ESC [ X`, and physical USB/PS/2 `Delete`.
 
-### D. Critical CRLF Rule for `patches/0002`
+### D. CF9 Reset (`ResetSystemLib.c`) for GRUB `fwsetup` & OS `BootToFwUi`
+- MrChromebox's `UefiPayloadPkg/Library/ResetSystemLib/ResetSystemLib.c` overrides Coreboot FADT `CF9=0x06` with `0x0a -> 0x0e` (`LEGACY_RESET_FULL`, `BIT3` + `BIT2` + `BIT1`).
+- On `ASRock H61M-S1 PLUS` (`H61` + `NCT6776F` `LDN 0x0a` AC power-loss off / `S5`), asserting `CF9 BIT3` (`FULL_RST`) drops `SLP_S5#` / `PSON#` into power-off instead of immediately rebooting back into UEFI Setup when selecting GRUB **`UEFI Firmware Settings`** (`fwsetup` / `EfiResetCold`).
+- `patches/0003` restores `0x02 -> 0x06` (`LEGACY_RESET_SYSTEM` -> `LEGACY_RESET_CPU | LEGACY_RESET_SYSTEM`) in `ResetCold()` (and `ResetWarm()` when `ResetValue == 0x06`), giving instant automatic reset into `UiApp`.
+
+### E. NVMe (`NvmExpressDxe`) & Secure Boot Component Audit
+- Defconfigs explicitly pass `-D BOOTSPLASH_IMAGE=FALSE -D NVME_ENABLE=TRUE`, and `scripts/build.sh` verifies `UEFIPAYLOAD.txt` contains `NvmExpressDxe`, `SecureBootConfigDxe`, `EnrollDefaultKeys`, `Pkcs7VerifyDxe`, `RngDxe`, `Hash2DxeCrypto`, `DxeImageVerificationLib`, `SecurityStubDxe`, and `ResetSystemRuntimeDxe`.
+- `EnrollDefaultKeys` provisions Microsoft 2011 + 2023 `PK`, `KEK`, `db`, and `dbx` in `SMMSTORE` on first boot, leaving `SecureBoot=0` by default (`CONFIG_EDK2_SECURE_BOOT_DEFAULT_ENABLE` unset) until toggled ON under `Device Manager / System Configuration` -> `Secure Boot Configuration`.
+
+### F. Critical CRLF Rule for EDK2 Patches (`0002` & `0003`)
 - Upstream EDK2 source files use **CRLF (`\r\n`)** line endings.
-- **Never** convert `patches/0002-edk2-delete-key-usb-boot-menu.patch` to LF (`\r\n -> \n`) when editing or syncing between Windows and Linux — doing so causes `git apply` to fail cleanly! Always transfer/store `.patch` files as raw binary bytes.
+- **Never** convert `patches/0002-*.patch` or `patches/0003-*.patch` to LF (`\r\n -> \n`) when editing or syncing between Windows and Linux — doing so causes `git apply` to fail cleanly! Always transfer/store `.patch` files as raw binary bytes.
 - To rebuild EDK2 cleanly on `192.168.1.15`, remove `build/UEFIPAYLOAD.fd` and `payloads/external/edk2/workspace/Build/` before running [`scripts/build_all_roms.sh`](../../../scripts/build_all_roms.sh).
 
 ---

@@ -9,7 +9,7 @@ description: >-
   configuring BIOS options from OS.
 ---
 
-# ASRock H61M-S1 PLUS Linux Bring-Up & Verification (`v26.11.3`)
+# ASRock H61M-S1 PLUS Linux Bring-Up & Verification (`v26.11.4`)
 
 Use this runbook to verify, configure Coreboot CFR options, or restore OS state on `h61` (`192.168.1.24` via DHCP on `eno0`) over SSH or `COM5` (see `serial-communication` and [serial_exec.py](../serial-communication/scripts/serial_exec.py)).
 
@@ -18,6 +18,8 @@ Use this runbook to verify, configure Coreboot CFR options, or restore OS state 
 [`scripts/h61_coreboot_config.py`](../../../scripts/h61_coreboot_config.py) is installed on `h61` at `/usr/local/bin/h61-coreboot-config` (stdlib-only Python 3 TUI + CLI):
 
 - **All 10 Coreboot CFR options** (`gfx_uma_size`, `dram_max_speed`, `peg_bifurcation`, `hyper_threading`, `sata_mode`, `nmi`, `me_state`, `fan_profile`, `fb_debug_pause`, `power_on_after_fail`) are exposed via `SMMSTORE` under `/sys/firmware/efi/efivars/*-ceae4c1d-335b-4685-a4a0-fc4a94eea085` with attributes `0x00000007` (`NV|BS|RT`, `8` bytes `<II`) and `FS_IMMUTABLE_FL` managed automatically.
+- **Secure Boot & NVMe**: `status` and `self-test` inspect `SecureBoot`, `SetupMode`, `VendorKeys`, `PK`/`KEK`/`db`/`dbx` in `efivars` (Microsoft 2011+2023 keys pre-enrolled, disabled by default until enabled under `System Configuration` -> `Secure Boot Configuration`) and any PCIe NVMe controllers (`NvmExpressDxe`).
+- **GRUB `fwsetup` / `reboot-uefi`**: With EDK2 patch `0003` (`ResetSystemLib.c` CF9 `0x02 -> 0x06`), selecting **UEFI Firmware Settings** in GRUB or running `sudo h61-coreboot-config reboot-uefi --now` / `systemctl reboot --firmware-setup` automatically hard-resets straight into UEFI Setup without powering off.
 - **Note on `me_state`**: Leave `me_state=0` (`Normal`) when booted with locked `FREG2` stock/compat ME (`8.1.20.1336` triggers a harmless ~1.3s `ME_GEN_7` MKHI timeout warning in Coreboot if `me_state=1` is set). Coreboot SMM (`me_smm.c` `RCBA32_OR(FD2, PCH_DISABLE_MEI1)`) already hides PCI `00:16.0` before OS handoff so `lspci -s 00:16.0` is empty in Linux. For physical hardware `AltMeDisable=1` + `124 KiB` stripped ME, flash `w25q64-8mb-minimal-me-full.rom` externally onto socketed `U3`.
 - **Common commands**:
   ```bash

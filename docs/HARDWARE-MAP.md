@@ -9,7 +9,7 @@
 [**Hardware Report**](HARDWARE-REPORT.md) ·
 [**Blobs & Licenses**](../BLOBS.md)
 
-Authoritative wiring, register, PCI/ACPI/IRQ, Coreboot driver, and Linux sysfs map cross-verified against the **ASRock `H61M-VS4 G/A 1.00` (`H61M-S1 PLUS R1.01`) boardview**, Coreboot `v26.11.4` source code, `inteltool -G`, `/dev/port`, and live Ubuntu `7.0.0-43-generic` telemetry (`h61`).
+Authoritative wiring, register, PCI/ACPI/IRQ, Coreboot driver, and Linux sysfs map cross-verified against the **ASRock `H61M-VS4 G/A 1.00` (`H61M-S1 PLUS R1.01`) boardview**, Coreboot `v26.11.5` source code, `inteltool -G`, `/dev/port`, factory `PE2` setup tables, and live Ubuntu `7.0.0-43-generic` telemetry (`h61`).
 
 > [!NOTE]
 > Every pin, PCI BDF, I/O port, MMIO base, and GPIO direction in this document is cross-checked against the physical boardview netlist and live runtime measurements (`lspci -vvv`, `/dev/port`, `inteltool -G`).
@@ -126,7 +126,7 @@ flowchart TB
 | **Serial Console (`COM1`)** | `U1007` `LDN 0x02` -> `U11` transceiver -> `COM1` DB9 | I/O `0x3f8`, IRQ `4`, ACPI `PNP0501`, `115200 8N1` | `devicetree.cb` (`2e.2` + globals), `early_init.c`, `acpi/superio.asl` | `8250_pnp` (`/dev/ttyS0`, `serial-getty@ttyS0.service`) |
 | **Parallel Port (`LPT1`)** | `U1007` `LDN 0x01` -> DB25 `LPT1` header | **Enabled** (`0x378`, IRQ `5`, DRQ `4`, `CRf0=0x38` SPP, `LPC_EN[2]=1`) | `devicetree.cb` (`2e.1 on`), `early_init.c` (`lpt_setup`), `mainboard.c`, `acpi/superio.asl` | `parport_pc` (`/dev/parport0`, `PNP0400`, `0378-037a`) |
 | **PS/2 KB & Mouse** | `U1007` `LDN 0x05` -> Stacked PS/2 / KB/MS ports | I/O `0x60`/`0x64`, IRQ `1`/`12`, ACPI `PNP0303`/`PNP0F13` | `devicetree.cb` (`2e.5 on`), `acpi/superio.asl` | `i8042`, `atkbd`, `psmouse` |
-| **Sensors & SmartFan IV** | `U1007` `LDN 0x0b` -> `CPU_FAN1` (Bank 2), `CHA_FAN1` (Bank 1), `PECI0` (pin 115) | LPC I/O `0x290..0x29f` (`gen1_dec`), `PECI0` | `mainboard.c` (`platform_late_init`), `cfr.c` (`fan_profile`) | `nct6775` (`/sys/class/hwmon/hwmon0`, `pwm1`/`pwm2` mode `5`) |
+| **Sensors & SmartFan IV** | `U1007` `LDN 0x0b` -> `CPU_FAN1` (Bank 2), `CHA_FAN1` (Bank 1), `PECI0` (`0x0c`), `SYSTIN` (`0x01`) | LPC I/O `0x290..0x29f` (`gen1_dec`), `PECI0` (`0x0c`), `SMIOVT1/2` | `mainboard.c` (`nct6776_hwm_board_init`), `cfr.c` (`fan_profile`) | `nct6775` (`/sys/class/hwmon/hwmon0`), `lm-sensors` (`/etc/sensors.d/asrock-h61m-s1-plus.conf`) |
 | **Front-Panel `PLED-`** | `U1007` `LDN 0x08` (`GP10`=`GRN_LED`) + `LDN 0x0b` `CR 0xf7` | `CR 0xf7`: `0x07` (S0 steady), `0x44` (S3 0.5 Hz blink), `0x00` (S4/S5 off) | `early_init.c` (`sio_pled_steady_on`), `smihandler.c` (`mainboard_smi_sleep`) | Autonomous Super I/O & SMM hardware state |
 | **`LPC/TPM1` Header** | 18-pin `LPC/TPM1` header (`CLK_PCH_PORT80` pin 1) | LPC Port `0x80`, `RCBA_GCS=0x00000c21` (`RPR=0`), `GEN_PMCON_1=0x0a10`, TPM `0xfed40000` | `board/Kconfig` (`DEFAULT_POST_ON_LPC`, `MAINBOARD_HAS_TPM1`, `MEMORY_MAPPED_TPM`), `devicetree.cb` (`0c31.0`), `mainboard.c`, `PlatformBootManager.c` (`0xE1..0xE8`) | Hardware LPC POST reader / TIS 1.2 TPM (`tpm_tis`) when populated |
 | **UEFI Variable Store** | `FMAP` `SMMSTORE` (`256 KiB` at `0x190000` or `0x030000`) | EFI GUID `ceae4c1d-335b-4685-a4a0-fc4a94eea085` | `cfr.c` + `bd82x6x/cfr.c` (`CFR_OPTFLAG_RUNTIME`), EDK2 `CfrSetupMenuDxe` | `efivarfs` (`/sys/firmware/efi/efivars/*-ceae4c1d-...`), `h61_coreboot_config.py` (10 options) |
@@ -187,6 +187,23 @@ Verified against vendor `SBPEI.efi` GPIO override table, live `inteltool -G`, an
   - `LDN 0x0a` (**ACPI**): `CR 0xe0=0x01`, `0xe6=0x4c`, `0xf0=0x40`, `0xf2=0x5c`, `0xf7=0xc0`.
   - `LDN 0x0b` (**HWM & Front-Panel LED**): Base **`0x0290`**, `CR 0x30=0xe1`, **`CR 0xf7 = 0x07` (S0 steady ON)** / **`0x44` (S3 0.5 Hz blink in SMM)** / **`0x00` (S4/S5 off)**, `CR 0xf8=0x00`.
   - **Key `U1007` Physical Pins**: Pins `60–61` power button; pin `63` ATX `PSON#`; pin `64` `SLP_S3#`; pins `77–79` PCIe/`PLT`/`CPU` reset; pins `80–82` power-good; pin `84` `SLP_S5#`; pin `101` `RSMRST#`; pin `115` CPU `PECI`; pins `116–118` `VCCM_OV1..3`; pins `124–127` `CPU_FAN1` / `CHA_FAN1`.
+
+### HWM Channel, Divider & Thermal Routing Map (`U1007` Boardview + Factory `PE2`)
+
+| `nct6776` Channel | `U1007` Pin(s) & Boardview Circuit | Physical Signal / Purpose | Scaling (`compute` / Hardware) | Coreboot `v26.11.5` & OS Handling |
+|---|---|---|---|---|
+| **`in0`** (`Bank 0 0x20`) | Pin `107` (`CPUVCORE`) -> `VCORE_SENSE` | CPU `Vcore` | Direct (`8 mV/LSB`, `@ * 1`) | Label `Vcore`, limits `0.40–1.60 V` (`0x2b/0x2c`) |
+| **`in1`** (`Bank 0 0x21`) | Pin `105` (`VIN0`) -> `+12VIN_HM` (`OR638`/`OR160`) | `+12V` ATX rail | Factory `PE2` `528/10 = @ * 6.6` (`56 kΩ / 10 kΩ`) | Label `+12V`, limits `10.0–13.2 V` (`0x2d/0x2e` raw `1.28–2.02 V`); live raw `~1.61 V` |
+| **`in2` / `in3`** | Pin `106` (`AVCC`), Pins `1, 24` (`VCC`) -> `+3V` | Analog & Digital `+3.3V` | Internal `1/2` (`16 mV/LSB` in kernel) | Label `AVCC` & `+3.3V`, limits `2.944–3.712 V` (`0x2f..0x32`) |
+| **`in4`** (`Bank 0 0x24`) | Pin `104` (`VIN1`) -> `SIO_IMON` via `AR8491` -> `UP701 RT8876 IMON` | CPU VRM current sense (not a rail) | Raw ADC (`32–304 mV` load dependent) | **Ignored** in OS (`ignore in4`); full-scale `0–2.04 V` (`0x33/0x34`) |
+| **`in5`** (`Bank 0 0x25`) | Pin `103` (`VIN2`) -> `+5VIN_HM` (`OR374`/`OR375`) | `+5V` ATX rail | Factory `PE2` `240/10 = @ * 3.0` (`20 kΩ / 10 kΩ`) | Label `+5V`, limits `4.50–5.50 V` (`0x35/0x36` raw `1.488–1.904 V`) |
+| **`in6`** (`Bank 0 0x26`) | Pin `109` (`VIN3/AUXTIN`) -> `MB_TEMP` (`OR690`/`TRMB8`) | Shared `MB_TEMP` thermistor voltage | Raw ADC (`~888 mV`) | **Ignored** in OS (`ignore in6`); full-scale `0–2.04 V` (`0x37/0x38`) |
+| **`in7` / `in8`** (`Bank 5`) | Pin `85` (`3VSB`), Pin `99` (`+BAT_3V`) | Standby `+3.3V` & `CR2032` battery | Internal `1/2` (`16 mV/LSB`); `EN_VBAT_MNT=1` (`0x5d[0]`) | Label `3VSB` (`2.944–3.712 V`) & `Vbat` (`2.400–3.712 V`, `Bank 5 0x54..0x57`) |
+| **`temp1` (`SMIOVT1`)** | Pin `111` (`SYSTIN`) <- `VREF` (`108`) -> `OR690` -> `MB_TEMP` -> `TRMB8` (`10k NTC`) | Motherboard Ambient (`M/B Temp`) | `Bank 6 0x21 = 0x01` (`SYSTIN`) | Thermistor mode (`0x5d`/`0x5e`), `high=75°C, hyst=70°C` (`0x39/0x3a`) |
+| **`temp7` (`SMIOVT2`)** | Pin `115` (`SIO_PECI`) <- `U1` CPU PECI | **`CPU Temp (PECI Agent 0)`** (`0.5°C`) | `Bank 6 0x22 = 0x0c` (`PECI0`); `Bank 7 0x01 = 0x95` | `high=85°C, hyst=80°C, crit=105°C` (`TjMax` MSR); eliminates unwired Pin `110` `CPUTIN` (`123.5°C`) |
+| **`temp8..10` (`PCH_*`)** | Pins `75–76` (`MSCL`/`MSDA`) **`net=''` (unwired)** | Unused Intel PCH SMBus temps | Always `0.0°C` in Bank `4 0x01..0x04` | **Ignored** in OS (`ignore temp8..10`); Coreboot `SMIOVT3..6` + `AUXFAN` set to `0x01` |
+| **`fan1/2`, `pwm1/2`** | `fan1`=Pin `126` (`CHA_FAN1`), `fan2`=Pin `124` (`CPU_FAN1`); `pwm1`=Pin `127`, `pwm2`=Pin `125` (`CFANOUT` -> `CPU_FAN1[4]` + `CHA_FAN1[4]`) | SmartFan IV closed-loop cooling (`PECI0`) | `Bank 1/2 0x00 = 0x0c` (`PECI0`); `Bank 0 0x04[0]=0` (PWM) | Both 4-pin fan headers receive `CFANOUT` PWM; `AUXFANIN0..2`/`pwm3` unpopulated (`ignore`) |
+| **`intrusion0/1`** | Pin `100` (`CASEOPEN0#`) <- `Q11`/`OR3`/`OR4` <- `CI1`; Pin `72` (`CASEOPEN1#`) **`net=''`** | Chassis intrusion latches | When `CI1` open, `OR4` drives `Q11` on (`CASEOPEN0#` LOW) | `CASEOPEN0/1` cleared via `Bank 0 0x46[7:6]`; `ignore` in `sensors.conf` unless `CI1` jumpered |
 
 ---
 

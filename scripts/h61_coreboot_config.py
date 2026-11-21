@@ -316,41 +316,124 @@ def read_text_safe(p: pathlib.Path, default: str = "") -> str:
         return default
 
 
+NCT6776_VOLT_MAP: Dict[int, Tuple[str, float]] = {
+    0: ("Vcore", 1.0),
+    1: ("+12V", 6.6),
+    2: ("AVCC", 1.0),
+    3: ("+3.3V", 1.0),
+    5: ("+5V", 3.0),
+    7: ("3VSB", 1.0),
+    8: ("Vbat", 1.0),
+}
+NCT6776_TEMP_MAP: Dict[str, str] = {
+    "SYSTIN": "M/B Temp",
+    "PECI Agent 0": "CPU Temp (PECI)",
+}
+NCT6776_IGNORED_TEMPS = {"PCH_CHIP_TEMP", "PCH_CPU_TEMP", "PCH_MCH_TEMP"}
+NCT6776_FAN_MAP: Dict[int, str] = {1: "CHA_FAN1", 2: "CPU_FAN1"}
+
+
 def get_sensors() -> List[Dict[str, object]]:
-    """Collect live hwmon readings (nct6776, coretemp, etc.)."""
+    """Collect live hwmon readings (nct6776, coretemp, etc.) with board scaling."""
     chips: List[Dict[str, object]] = []
     base = pathlib.Path("/sys/class/hwmon")
     if not base.exists():
         return chips
     for hw in sorted(base.iterdir()):
         name = read_text_safe(hw / "name", hw.name)
+        is_nct = name == "nct6776"
         temps = []
         fans = []
         volts = []
         pwms = []
-        for idx in range(1, 20):
+        alarms: List[str] = []
+        for idx in range(0, 16):
             tp = hw / f"temp{idx}_input"
             if tp.exists():
                 val_mc = int(read_text_safe(tp, "0") or 0)
-                lbl = read_text_safe(hw / f"temp{idx}_label", f"temp{idx}")
-                temps.append({"id": f"temp{idx}", "label": lbl, "c": val_mc / 1000.0})
+                raw_lbl = read_text_safe(hw / f"temp{idx}_label", f"temp{idx}")
+                skip_temp = is_nct and (
+                    raw_lbl in NCT6776_IGNORED_TEMPS
+                    or (raw_lbl == "CPUTIN" and val_mc >= 110000)
+                )
+                if not skip_temp:
+                    lbl = NCT6776_TEMP_MAP.get(raw_lbl, raw_lbl) if is_nct else raw_lbl
+                    temps.append({"id": f"temp{idx}", "label": lbl, "c": val_mc / 1000.0})
+                    if read_text_safe(hw / f"temp{idx}_alarm", "0") == "1":
+                        alarms.append(f"temp:{lbl}")
             fp = hw / f"fan{idx}_input"
             if fp.exists():
                 rpm = int(read_text_safe(fp, "0") or 0)
-                lbl = read_text_safe(hw / f"fan{idx}_label", f"fan{idx}")
-                fans.append({"id": f"fan{idx}", "label": lbl, "rpm": rpm})
+                raw_lbl = read_text_safe(hw / f"fan{idx}_label", f"fan{idx}")
+                if not (is_nct and idx not in NCT6776_FAN_MAP and rpm == 0):
+                    lbl = NCT6776_FAN_MAP.get(idx, raw_lbl) if is_nct else raw_lbl
+                    fans.append({"id": f"fan{idx}", "label": lbl, "rpm": rpm})
+                    if read_text_safe(hw / f"fan{idx}_alarm", "0") == "1":
+                        alarms.append(f"fan:{lbl}")
             vp = hw / f"in{idx}_input"
             if vp.exists():
                 mv = int(read_text_safe(vp, "0") or 0)
-                lbl = read_text_safe(hw / f"in{idx}_label", f"in{idx}")
-                volts.append({"id": f"in{idx}", "label": lbl, "v": mv / 1000.0})
+                raw_lbl = read_text_safe(hw / f"in{idx}_label", f"in{idx}")
+                if is_nct:
+                    if idx not in NCT6776_VOLT_MAP:
+                        continue
+                    lbl, mult = NCT6776_VOLT_MAP[idx]
+                else:
+                    lbl, mult = raw_lbl, 1.0
+                volts.append({"id": f"in{idx}", "label": lbl, "v": (mv * mult) / 1000.0})
+                if read_text_safe(hw / f"in{idx}_alarm", "0") == "1":
+                    alarms.append(f"volt:{lbl}")
             pp = hw / f"pwm{idx}"
             if pp.exists():
-                raw_pwm = int(read_text_safe(pp, "0") or 0)
                 en = read_text_safe(hw / f"pwm{idx}_enable", "?")
-                pwms.append({"id": f"pwm{idx}", "pct": round(raw_pwm * 100.0 / 255.0, 1), "raw": raw_pwm, "enable": en})
-        chips.append({"hwmon": hw.name, "name": name, "temps": temps, "fans": fans, "volts": volts, "pwms": pwms})
+                if is_nct and idx == 3 and en == "0":
+                    continue
+                raw_pwm = int(read_text_safe(pp, "0") or 0)
+                mode_raw = read_text_safe(hw / f"pwm{idx}_mode", "")
+                mode_str = "PWM" if mode_raw == "1" else ("DC" if mode_raw == "0" else "?")
+                temp_sel = read_text_safe(hw / f"pwm{idx}_temp_sel", "")
+                pwms.append(
+                    {
+                        "id": f"pwm{idx}",
+                        "pct": round(raw_pwm * 100.0 / 255.0, 1),
+                        "raw": raw_pwm,
+                        "enable": en,
+                        "mode": mode_str,
+                        "temp_sel": temp_sel,
+                    }
+                )
+        ci1_open: Optional[bool] = None
+        if is_nct and (hw / "intrusion0_alarm").exists():
+            ci1_open = read_text_safe(hw / "intrusion0_alarm", "0") == "1"
+        chips.append(
+            {
+                "hwmon": hw.name,
+                "name": name,
+                "temps": temps,
+                "fans": fans,
+                "volts": volts,
+                "pwms": pwms,
+                "alarms": alarms,
+                "ci1_open": ci1_open,
+            }
+        )
     return chips
+
+
+def get_gpu_sensors() -> List[Dict[str, str]]:
+    """Query NVIDIA GPU telemetry if nvidia-smi is present."""
+    nsmi = shutil.which("nvidia-smi")
+    if not nsmi:
+        return []
+    rc, out, _ = run_cmd([nsmi, "--query-gpu=name,temperature.gpu,power.draw", "--format=csv,noheader"], timeout=10)
+    if rc != 0:
+        return []
+    gpus: List[Dict[str, str]] = []
+    for line in out.splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) >= 3:
+            gpus.append({"name": parts[0], "temp_c": parts[1], "power": parts[2]})
+    return gpus
 
 
 def get_wol(iface: str = DEFAULT_NIC) -> Dict[str, str]:
@@ -725,7 +808,31 @@ def self_test(efivars_dir: pathlib.Path = EFIVARS_DIR) -> Tuple[bool, List[str]]
     logs.append(f"  NVMe PCIe controllers   : {len(nvmes)} detected")
     sensors = get_sensors()
     logs.append(f"  hwmon devices           : {', '.join(str(s['name']) for s in sensors) or 'none'}")
-    ok = present == len(CFR_OPTIONS) and bool(io["com1_03f8_active"]) and bool(io["lpt1_0378_active"])
+    nct = next((s for s in sensors if s["name"] == "nct6776"), None)
+    hwm_ok = False
+    if nct:
+        temp_by_lbl = {t["label"]: t["c"] for t in nct["temps"]}
+        fan_by_lbl = {f["label"]: f["rpm"] for f in nct["fans"]}
+        mb_t = temp_by_lbl.get("M/B Temp")
+        cpu_t = temp_by_lbl.get("CPU Temp (PECI)")
+        alarms = nct.get("alarms") or []
+        logs.append(f"  NCT6776 M/B Temp        : {mb_t:.1f} C" if mb_t is not None else "  NCT6776 M/B Temp        : missing")
+        logs.append(f"  NCT6776 CPU Temp (PECI) : {cpu_t:.1f} C" if cpu_t is not None else "  NCT6776 CPU Temp (PECI) : missing")
+        logs.append(
+            f"  NCT6776 Fans            : CHA_FAN1={fan_by_lbl.get('CHA_FAN1', '?')} RPM, "
+            f"CPU_FAN1={fan_by_lbl.get('CPU_FAN1', '?')} RPM"
+        )
+        logs.append(
+            f"  NCT6776 HWM alarms      : {len(alarms)} ({', '.join(alarms) if alarms else 'none'})"
+            + (" [CI1 open/unjumpered]" if nct.get("ci1_open") else "")
+        )
+        hwm_ok = (
+            mb_t is not None and 0.0 < mb_t < 80.0
+            and cpu_t is not None and 0.0 < cpu_t < 100.0
+            and "CHA_FAN1" in fan_by_lbl and "CPU_FAN1" in fan_by_lbl
+            and len(alarms) == 0
+        )
+    ok = present == len(CFR_OPTIONS) and bool(io["com1_03f8_active"]) and bool(io["lpt1_0378_active"]) and hwm_ok
     return ok, logs
 
 
@@ -755,6 +862,7 @@ class H61Tui:
         self.wol_info = get_wol(DEFAULT_NIC)
         self.sys_info = get_system_info()
         self.sensors = get_sensors()
+        self.gpu_sensors = get_gpu_sensors()
 
     def _safe_addn(self, y: int, x: int, text: str, width: int, attr: int = 0) -> None:
         h, w = self.stdscr.getmaxyx()
@@ -888,12 +996,20 @@ class H61Tui:
             f_str = ", ".join(f"{f['label']}={f['rpm']} RPM" for f in s["fans"])
             if f_str:
                 lines.append(f"  Fans  : {f_str}")
-            p_str = ", ".join(f"{p['id']}={p['pct']}% (mode={p['enable']})" for p in s["pwms"])
+            p_str = ", ".join(f"{p['id']}={p['pct']}% ({p['mode']}, en={p['enable']}, src={p['temp_sel'] or '?'})" for p in s["pwms"])
             if p_str:
                 lines.append(f"  PWM   : {p_str}")
-            v_str = ", ".join(f"{v['label']}={v['v']:.3f}V" for v in s["volts"][:6])
+            v_str = ", ".join(f"{v['label']}={v['v']:.3f}V" for v in s["volts"])
             if v_str:
                 lines.append(f"  Volts : {v_str}")
+            if s["name"] == "nct6776":
+                al = s.get("alarms") or []
+                ci_note = " | CI1 header open" if s.get("ci1_open") else ""
+                lines.append(f"  Alarms: {', '.join(al) if al else 'none'}{ci_note}")
+        if self.gpu_sensors:
+            lines.append("[GPU : nvidia-smi]")
+            for g in self.gpu_sensors:
+                lines.append(f"  {g['name']}: {g['temp_c']}C, {g['power']}")
         offset = self.cursor[2]
         visible = h - 10
         offset = max(0, min(offset, max(0, len(lines) - visible)))
@@ -1196,11 +1312,22 @@ def main(argv: Optional[List[str]] = None) -> int:
         for s in get_sensors():
             print(f"  [{s['hwmon']}] {s['name']}:")
             if s["temps"]:
-                print("    Temps: " + ", ".join(f"{t['label']}={t['c']:.1f}C" for t in s["temps"]))
+                print("    Temps : " + ", ".join(f"{t['label']}={t['c']:.1f}C" for t in s["temps"]))
             if s["fans"]:
-                print("    Fans : " + ", ".join(f"{f['label']}={f['rpm']} RPM" for f in s["fans"]))
+                print("    Fans  : " + ", ".join(f"{f['label']}={f['rpm']} RPM" for f in s["fans"]))
             if s["pwms"]:
-                print("    PWM  : " + ", ".join(f"{p['id']}={p['pct']}% (en={p['enable']})" for p in s["pwms"]))
+                print("    PWM   : " + ", ".join(f"{p['id']}={p['pct']}% ({p['mode']}, en={p['enable']}, src={p['temp_sel'] or '?'})" for p in s["pwms"]))
+            if s["volts"]:
+                print("    Volts : " + ", ".join(f"{v['label']}={v['v']:.3f}V" for v in s["volts"]))
+            if s["name"] == "nct6776":
+                al = s.get("alarms") or []
+                ci_note = " (CI1 header open)" if s.get("ci1_open") else ""
+                print(f"    Alarms: {', '.join(al) if al else 'none'}{ci_note}")
+        gpus = get_gpu_sensors()
+        if gpus:
+            print("  [gpu] nvidia-smi:")
+            for g in gpus:
+                print(f"    {g['name']}: {g['temp_c']} C, {g['power']}")
         return 0
 
     if cmd == "wol":

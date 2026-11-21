@@ -9,7 +9,7 @@
 [**Hardware Report**](HARDWARE-REPORT.md) ·
 [**Blobs & Licenses**](../BLOBS.md)
 
-This document lists **all Socket LGA1155 processors** compatible with the **ASRock H61M-S1 PLUS** (`H61M-VS4 G/A 1.00`) motherboard and this **Coreboot + EDK2** firmware port (`v26.11.4`).
+This document lists **all Socket LGA1155 processors** compatible with the **ASRock H61M-S1 PLUS** (`H61M-VS4 G/A 1.00`) motherboard and this **Coreboot + EDK2** firmware port (`v26.11.5`).
 
 > [!IMPORTANT]
 > **Key Upgrade Highlights**:

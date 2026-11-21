@@ -9,7 +9,7 @@
 [**Hardware Report**](HARDWARE-REPORT.md) ·
 [**Blobs & Licenses**](../BLOBS.md)
 
-This knowledge base consolidates every hardware discovery, boardview correlation, debugging breakthrough, and Linux integration pitfall uncovered while porting **Coreboot (`df45ea2c49b4`) + EDK2 `UefiPayloadPkg` (`f248a68be339`)** from a stock 4 MiB AMI Aptio `P1.10` BIOS to verified **4 MiB (`W25Q32`) & 8 MiB (`W25Q64`)** open-source firmware releases (`v26.11.4`).
+This knowledge base consolidates every hardware discovery, boardview correlation, debugging breakthrough, and Linux integration pitfall uncovered while porting **Coreboot (`df45ea2c49b4`) + EDK2 `UefiPayloadPkg` (`f248a68be339`)** from a stock 4 MiB AMI Aptio `P1.10` BIOS to verified **4 MiB (`W25Q32`) & 8 MiB (`W25Q64`)** open-source firmware releases (`v26.11.5`).
 
 > [!IMPORTANT]
 > **Top 4 Takeaways for Intel 6/7-Series (Sandy/Ivy Bridge + Cougar Point) Coreboot Ports**:
@@ -21,7 +21,7 @@ This knowledge base consolidates every hardware discovery, boardview correlation
 ## Table of Contents
 
 1. [Pre-Port Reconnaissance & Board Identity](#1-pre-port-reconnaissance--board-identity)
-2. [Critical Silicon & Firmware Bugs Solved (Bugs 1–13)](#2-critical-silicon--firmware-bugs-solved)
+2. [Critical Silicon & Firmware Bugs Solved (Bugs 1–14)](#2-critical-silicon--firmware-bugs-solved)
 3. [Linux OS & Tooling Lessons Learned (`h61`, Ubuntu `7.0.0-43-generic`)](#3-linux-os--tooling-lessons-learned-h61-ubuntu-700-43-generic)
 
 ---
@@ -97,6 +97,16 @@ This knowledge base consolidates every hardware discovery, boardview correlation
 - **Root Cause**: MrChromebox's `UefiPayloadPkg/Library/ResetSystemLib/ResetSystemLib.c` overrides Coreboot's FADT reset register (`0xcf9`, `RESET_VALUE = 0x06`) with `0x0a -> 0x0e` (`LEGACY_RESET_FULL`, setting `CF9 BIT3`). On Cougar Point `H61` + `NCT6776F` (`LDN 0x0a`, AC power-loss `S5`), asserting `FULL_RST` (`BIT3`) drops `SLP_S5#` / `PSON#` into power-off rather than restarting! *(Linux kernel `reboot` succeeded because Linux honored Coreboot FADT `0x06` directly without setting `BIT3`.)*
 - **Fix (`patches/0003-edk2-cf9-reset-and-secureboot-components.patch`)**: Changed `ResetCold()` (and `ResetWarm()` when `ResetValue == 0x06`) in `ResetSystemLib.c` from `0x0a -> 0x0e` (`LEGACY_RESET_FULL`) to `0x02 -> 0x06` (`LEGACY_RESET_SYSTEM` -> `LEGACY_RESET_CPU | LEGACY_RESET_SYSTEM`). Now GRUB `fwsetup` immediately resets and automatically enters UEFI Setup (`UiApp`) with zero power loss.
 
+### Bug 14: NCT6776F `PECI0` Source (`0x0c` vs `0x10`), Floating `CPUTIN = 123.5°C`, Unwired `MSCL/MSDA`, & OS Voltage Scaling
+- **Symptoms**: Prior to `v26.11.5`, Linux `hwmon0` (`nct6776`) reported `CPUTIN = 123.5°C (ALARM)`, duplicate `AUXTIN = 31.5°C`, `PCH_CHIP/CPU/MCH_TEMP = 0.0°C`, bogus threshold alarms on `SYSTIN` and `in1..in8`, `pwm1_mode = 0` (`DC`), unscaled raw ADC voltages on `+12V`/`+5V`, and SmartFan IV locked at idle Point 1 (`pwm1_temp_sel=7 -> PCH_CPU_TEMP = 0.0°C`) even under heavy CPU load.
+- **Root Causes (Cross-Verified Against `NCT6776F-D_datasheet_rev1.2.pdf`, Linux `nct6775-core.c`, Boardview, & Stock `PE2`/`pei0`/`pei3`)**:
+  1. Coreboot's shared `src/superio/nuvoton/common/hwm.h` defines `NUVOTON_FAN_SOURCE_PECI0 = 0x10` (accurate for `NCT6791D`/`NCT6796D`), whereas on **NCT6776F**, `0x10` is `PCH_CPU_TEMP` and **`PECI Agent 0` is `0x0c` (`SYSTIN` is `0x01`)**! On H61M-S1 PLUS, `U1007` pins 75/76 (`MSCL`/`MSDA`) are physically unwired (`net=''`), so `PCH_CPU_TEMP` stayed `0.0°C` forever.
+  2. Pin 110 (`CPUTIN`) is completely unconnected on the PCB while Pin 109 (`VIN3/AUXTIN`) and Pin 111 (`SYSTIN`) are shorted together on `MB_TEMP` (`TRMB8` thermistor + `OR690` to `VREF`). Leaving `CPUTIN` in open-diode/current mode (`Bank 0 0x5d/0x5e` bit 2 = `1`) and `Bank 6 0x22 = 0x02` generated `123.5°C`.
+  3. `Bank 0 0x04[0]` defaulted to `1` (`SYSFANOUT` DC mode), all Bank 0/1/2/5 alarm limit registers defaulted to `0x00` (causing `in1..in8_alarm=1`, `temp1_alarm=1`), Pin 72 (`CASEOPEN1#`) is floating, and an open `CI1` header pulls `Q11` on so `CASEOPEN0#` (`Pin 100`) stays low (`intrusion0_alarm=1`).
+  4. Boardview + stock ASRock `PE2` confirm external voltage dividers on `in1` (`Pin 105`, `528/10 = @ * 6.6` `56 kΩ / 10 kΩ`) and `in5` (`Pin 103`, `240/10 = @ * 3.0` `20 kΩ / 10 kΩ`), while `in4` (`Pin 104`) is VRM `SIO_IMON` and `in6` (`Pin 109`) is the `MB_TEMP` thermistor node.
+- **Root-Cause Fix (`mainboard.c` + `configs/asrock-h61m-s1-plus-sensors.conf` + `scripts/h61_coreboot_config.py`)**:
+  - Defined `NCT6776_TEMP_SRC_PECI0 = 0x0c` locally in `mainboard.c` (preserving upstream `hwm.h` for newer Super I/Os), added `nct6776_hwm_board_init()` (`SMIOVT1=0x01`, `SMIOVT2=0x0c`, deduplicated `SMIOVT3..6`/`AUXFAN=0x01`, cleared `CPUTIN` diode/current bits, set `SYSFANOUT` PWM mode `0x04[0]=0`, preserved `Bank 7 0x01=0x95`, programmed Bank `0/1/2/5` limits, pulsed `0x46[7:6]`), and deployed `/etc/sensors.d/asrock-h61m-s1-plus.conf`. Proved live on `h61` via 15s load test (`PECI0` `34.5 -> 60.0 -> 33.5°C`, `pwm1`/`pwm2` `89/76 -> 148/152 -> 89/76`, `CHA_FAN1` `1920 -> 3040 -> 1909 RPM`, zero operational alarms).
+
 ---
 
 ## 3. Linux OS & Tooling Lessons Learned (`h61`, Ubuntu `7.0.0-43-generic`)
@@ -104,7 +114,7 @@ This knowledge base consolidates every hardware discovery, boardview correlation
 | Area | Symptom / Pitfall | Root Cause & Permanent Fix |
 |---|---|---|
 | **Netplan NIC Naming (`eno0` vs `br0`)** | Network dropped or failed DHCP after Coreboot migration | Coreboot SMBIOS reports `DeviceName: Ethernet controller`, giving `eno0` (`enp2s0` alt), whereas `01-br0.yaml` referenced non-existent `enp3s0` + competing `enp2s0` alphabetical systemd matching. Fixed permanently via `/etc/netplan/00-installer-config.yaml` matching `macaddress: d0:50:99:7c:84:dd` with DHCP on `eno0`. |
-| **NCT6776 `CPUTIN` Anomaly** | `sensors` / `hwmon0` shows `CPUTIN=123.5°C` | Analog `CPUTIN` thermistor pin is floating/unwired on this board; true CPU die temps (`36–45 °C`) arrive over single-wire **`PECI0`** (which drives SmartFan IV in hardware and appears under Linux **`coretemp`** `hwmon1`). `SYSTIN` & `AUXTIN` (`~34 °C`) are wired board thermistors. |
+| **NCT6776 `CPUTIN` & Sensor Scaling** | Pre-`v26.11.5`: `CPUTIN=123.5°C`, bogus alarms, unscaled `in1`/`in5`, static fans | **Fixed in `v26.11.5`**: `mainboard.c` sets `NCT6776_TEMP_SRC_PECI0 = 0x0c`, routes `SMIOVT1->SYSTIN` & `SMIOVT2->PECI Agent 0`, clears `CPUTIN` open-diode mode, programs Bank `0/1/2/5` limits; `/etc/sensors.d/asrock-h61m-s1-plus.conf` applies ASRock `PE2` `+12V`/`+5V` multipliers and hides unwired `PCH_*`/`in4`/`in6`/`intrusion*`. |
 | **ACPI S3 + NVIDIA vGPU `535.309.01`** | Kernel `rtcwake -m mem` fails with `-EIO` (`-5`) | `/etc/modprobe.d/blacklist-nouveau.conf` enables `NVreg_PreserveVideoMemoryAllocations=1`. Kernel expects `echo suspend > /proc/driver/nvidia/suspend` before sleeping and `echo resume > ...` afterward (`h61_coreboot_config.py s3` handles this automatically). |
 | **`flashrom v1.6.0` Internal Flashing** | Ambiguous chip error + read-locked ME refusal | `ef 40 17` matches multiple `W25Q64*` entries and `FREG2` (ME) is read-locked. Always pass `-c "W25Q64BV/W25Q64CV/W25Q64FV" --ifd -i bios --noverify-all -w <8mb_full_rom.rom>`. |
 | **Windows `COM5` CH340 Driver Bug** | `pyserial` & `.NET SerialPort` fail `SetCommState()` with **Win32 Error 31** | WCH `CH340` Windows driver `3.9.2024.9` rejects full `DCB` writes. Use `.agents/skills/serial-communication/scripts/com_serial.py` (`CreateFileW` + `GetCommState` + conditional `mode COM5`), and single-line base64 `eval` in `serial_exec.py` to survive `sudo tcsetattr(TCSAFLUSH)`. |

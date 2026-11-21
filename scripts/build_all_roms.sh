@@ -8,7 +8,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COREBOOT_DIR="${COREBOOT_DIR:-$PWD/coreboot}"
 OUT_DIR="${OUT_DIR:-$ROOT_DIR/outputs}"
-RELEASE_TAG="${RELEASE_TAG:-v26.11.4}"
+RELEASE_TAG="${RELEASE_TAG:-v26.11.5}"
 
 mkdir -p "$OUT_DIR"
 rm -f "$OUT_DIR/SHA256SUMS.txt"

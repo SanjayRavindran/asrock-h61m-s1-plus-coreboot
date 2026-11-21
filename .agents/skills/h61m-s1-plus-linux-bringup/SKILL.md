@@ -9,7 +9,7 @@ description: >-
   configuring BIOS options from OS.
 ---
 
-# ASRock H61M-S1 PLUS Linux Bring-Up & Verification (`v26.11.4`)
+# ASRock H61M-S1 PLUS Linux Bring-Up & Verification (`v26.11.5`)
 
 Use this runbook to verify, configure Coreboot CFR options, or restore OS state on `h61` (`192.168.1.24` via DHCP on `eno0`) over SSH or `COM5` (see `serial-communication` and [serial_exec.py](../serial-communication/scripts/serial_exec.py)).
 
@@ -62,11 +62,14 @@ Coreboot and EDK2 use `COM1` (`0x3f8`, `/dev/ttyS0`) at `115200 8N1`, and **`v26
 - Under Coreboot, onboard Realtek `RTL8111` (`10ec:8168`, `r8169`, MAC `d0:50:99:7c:84:dd`) stays `eno0` (`192.168.1.24/24`, matched by MAC in `/etc/netplan/00-installer-config.yaml`). Note: if an add-in PCIe NIC is installed in `PCIE2` (`00:1c.0`, e.g., Intel `I226-V` at `02:00.0`), Coreboot enumerates onboard `RTL8111` (`pcie_rp4` `00:1c.3`) at `03:00.0` (`RP04`), while systemd MAC matching keeps `eno0` unchanged.
 - **Pitfall if Adding a Linux Bridge**: Any competing `enp2s0:` Netplan stanza sorts alphabetically before `enp3s0`, stealing `eno0` and blackholing outbound IP replies.
 
-## 4. `NCT6776F/D` Hardware Monitor & ACPI S3
+## 4. `NCT6776F/D` Hardware Monitor, `lm-sensors`, & ACPI S3
 
 - `/etc/modules-load.d/h61m-s1-plus-coreboot.conf` loads `i2c-dev` and `nct6775`.
-- `hwmon0` (`nct6776`) exposes live `SYSTIN`, `AUXTIN`, `fan1`/`fan2` RPM, and `pwm1`/`pwm2` (mode `5` SmartFan IV driven by `PECI0`). Analog `CPUTIN` (~`123.5°C`) is an unwired board pin; read real CPU die temperatures from `hwmon1` (`coretemp`).
-- `PEGP`, `RP01` (`00:1c.0` -> RTL8111 `02:00.0`, `Supports Wake-on: pumbg`), `EHC1`, and `EHC2` show `S4 *enabled` in `/proc/acpi/wakeup`.
+- Install `lm-sensors` and deploy [`configs/asrock-h61m-s1-plus-sensors.conf`](../../../configs/asrock-h61m-s1-plus-sensors.conf) (`sudo install -m 0644 configs/asrock-h61m-s1-plus-sensors.conf /etc/sensors.d/asrock-h61m-s1-plus.conf && sudo sensors -s`):
+  - `temp1` (`M/B Temp`, `SYSTIN` thermistor `TRMB8`), `temp7` (`CPU Temp (PECI)`, `SMIOVT2=0x0c` tracking `coretemp` at `0.5°C` resolution with `TjMax=105°C` crit), `fan1` (`CHA_FAN1`), `fan2` (`CPU_FAN1`), and SmartFan IV closed-loop `pwm1`/`pwm2` (`mode=1`, `temp_sel=7` -> `PECI0`).
+  - Voltage scaling: `in0` (`Vcore`), `in1` (`+12V` `@ * 6.6` per stock ASRock `PE2`), `in2` (`AVCC`), `in3` (`+3.3V`), `in5` (`+5V` `@ * 3` `20k/10k` divider `OR374/OR375`), `in7` (`3VSB`), `in8` (`Vbat`); ignores `in4` (`SIO_IMON`), `in6` (`MB_TEMP`), unwired `fan3..fan5`, unwired `PCH_*` (`temp8..temp10`), floating `CASEOPEN1#` (`intrusion1`), and open `CI1` (`intrusion0`, held low by `Q11`/`OR4` when unjumpered).
+- `h61-coreboot-config self-test` verifies `M/B Temp`, `CPU Temp (PECI)`, `CHA_FAN1`/`CPU_FAN1`, and `0` operational HWM threshold alarms, while `status` displays scaled voltages, PWM modes, and `nvidia-smi` (`Tesla P4`) telemetry.
+- `PEGP`, `RP01` (`00:1c.0` -> RTL8111/I226-V), `RP04`, `EHC1`, and `EHC2` show `S4 enabled` in `/proc/acpi/wakeup`.
 - With NVIDIA vGPU `535.309.01` (`NVreg_PreserveVideoMemoryAllocations=1`), use `sudo h61-coreboot-config s3` (writes `suspend` / `resume` to `/proc/driver/nvidia/suspend` around sleep).
 
 ## 5. Platform Hardware Health Checklist

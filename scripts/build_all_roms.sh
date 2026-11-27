@@ -8,14 +8,18 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COREBOOT_DIR="${COREBOOT_DIR:-$PWD/coreboot}"
 OUT_DIR="${OUT_DIR:-$ROOT_DIR/outputs}"
-RELEASE_TAG="${RELEASE_TAG:-v26.11.5}"
+RELEASE_TAG="${RELEASE_TAG:-v26.11.6}"
 
 mkdir -p "$OUT_DIR"
 rm -f "$OUT_DIR/SHA256SUMS.txt"
 
 EDK2_CACHE_FD="$(mktemp /tmp/h61m-uefipayload.XXXXXX.fd)"
-trap 'rm -f "$EDK2_CACHE_FD"' EXIT
+IPXE_OUT_DIR="$(mktemp -d /tmp/h61m-ipxe.XXXXXX)"
+trap 'rm -f "$EDK2_CACHE_FD"; rm -rf "$IPXE_OUT_DIR"' EXIT
 rm -f "$EDK2_CACHE_FD"
+
+COREBOOT_DIR="$COREBOOT_DIR" IPXE_OUT_DIR="$IPXE_OUT_DIR" \
+  bash "$ROOT_DIR/scripts/build_ipxe.sh"
 
 build_variant() {
   local variant="$1"
@@ -23,6 +27,7 @@ build_variant() {
   local ifd="$3"
   local me="$4"
   local bios_off="$5"
+  local ipxe_efi="$6"
 
   echo ""
   echo "=================================================================="
@@ -38,6 +43,7 @@ build_variant() {
   ME_FILE="$ROOT_DIR/blobs/$me" \
   BIOS_OFFSET="$bios_off" \
   EDK2_CACHE_FD="$EDK2_CACHE_FD" \
+  IPXE_EFI_FILE="$ipxe_efi" \
     bash "$ROOT_DIR/scripts/build.sh"
 
   cp -f "$ROOT_DIR/configs/$defconfig" "$OUT_DIR/"
@@ -48,28 +54,32 @@ build_variant \
   "h61m-s1-plus-w25q64-8mb-mecleaned-compat.defconfig" \
   "ifd-8mb-mecleaned-compat-unlocked.bin" \
   "me-cleaned-1532k-compat.bin" \
-  "0x180000"
+  "0x180000" \
+  "$IPXE_OUT_DIR/ipxe-full.efi"
 
 build_variant \
   "w25q64-8mb-minimal-me" \
   "h61m-s1-plus-w25q64-8mb-minimal-me.defconfig" \
   "ifd-8mb-minimal-me-unlocked.bin" \
   "me-minimal-124k.bin" \
-  "0x020000"
+  "0x020000" \
+  "$IPXE_OUT_DIR/ipxe-full.efi"
 
 build_variant \
   "w25q32-4mb-minimal-me" \
   "h61m-s1-plus-w25q32-4mb-minimal-me.defconfig" \
   "ifd-4mb-minimal-me-unlocked.bin" \
   "me-minimal-124k.bin" \
-  "0x020000"
+  "0x020000" \
+  "$IPXE_OUT_DIR/ipxe-full.efi"
 
 build_variant \
   "w25q32-4mb-stock-me" \
   "h61m-s1-plus-w25q32-4mb-stock-me.defconfig" \
   "ifd-4mb-stock-unlocked.bin" \
   "me-stock-8.1.20.1336.bin" \
-  "0x180000"
+  "0x180000" \
+  "$IPXE_OUT_DIR/ipxe-h61-slim.efi"
 
 (
   cd "$OUT_DIR"

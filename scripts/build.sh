@@ -15,6 +15,7 @@ IFD_FILE="${IFD_FILE:-}"
 ME_FILE="${ME_FILE:-}"
 BIOS_OFFSET="${BIOS_OFFSET:-}"
 EDK2_CACHE_FD="${EDK2_CACHE_FD:-}"
+IPXE_EFI_FILE="${IPXE_EFI_FILE:-}"
 
 if [ -d /opt/xgcc/bin ]; then
   export PATH="/opt/xgcc/bin:$PATH"
@@ -49,9 +50,12 @@ if git apply --check "$PATCH1" >/dev/null 2>&1; then
   git apply "$PATCH1"
 elif git apply --reverse --check "$PATCH1" >/dev/null 2>&1; then
   echo "Chipset patch already applied."
+elif git apply --3way --check "$PATCH1" >/dev/null 2>&1; then
+  echo "Applying chipset patch with 3-way merge..."
+  git apply --3way "$PATCH1"
 else
-  echo "WARNING: Chipset patch did not apply cleanly on this Coreboot revision; trying 3-way fallback..." >&2
-  git apply --reject --whitespace=fix "$PATCH1" || true
+  echo "ERROR: Failed to apply chipset patch cleanly: $PATCH1" >&2
+  exit 1
 fi
 
 echo "[3/6] Preparing and patching EDK2 UefiPayloadPkg workspace"
@@ -67,7 +71,8 @@ fi
 
 for PATCH_EDK2 in \
   "$ROOT_DIR/patches/0002-edk2-delete-key-usb-boot-menu.patch" \
-  "$ROOT_DIR/patches/0003-edk2-cf9-reset-and-secureboot-components.patch"; do
+  "$ROOT_DIR/patches/0003-edk2-cf9-reset-and-secureboot-components.patch" \
+  "$ROOT_DIR/patches/0004-edk2-cbfs-ipxe-support.patch"; do
   if [ -f "$PATCH_EDK2" ]; then
     if git -C "$EDK2_DIR" apply --check "$PATCH_EDK2" >/dev/null 2>&1; then
       git -C "$EDK2_DIR" apply "$PATCH_EDK2"
@@ -106,8 +111,9 @@ fi
 
 EDK2_REPORT="$COREBOOT_DIR/payloads/external/edk2/workspace/Build/UefiPayloadPkgX64/UEFIPAYLOAD.txt"
 if [ -f "$EDK2_REPORT" ]; then
-  echo "=== EDK2 MODULE AUDIT (NVMe & Secure Boot & Reset) ==="
+  echo "=== EDK2 MODULE AUDIT (NVMe & Secure Boot & Reset & CBFS Assets) ==="
   for req_mod in \
+    CbfsPayloadAssetsDxe \
     NvmExpressDxe \
     SecureBootConfigDxe \
     EnrollDefaultKeys \
@@ -122,7 +128,20 @@ if [ -f "$EDK2_REPORT" ]; then
       exit 1
     fi
   done
-  echo "Verified all required NVMe, Secure Boot, and Reset modules in UEFIPAYLOAD.txt."
+  echo "Verified all required CBFS Assets, NVMe, Secure Boot, and Reset modules in UEFIPAYLOAD.txt."
+fi
+
+if [ -n "$IPXE_EFI_FILE" ]; then
+  if [ ! -r "$IPXE_EFI_FILE" ]; then
+    echo "ERROR: IPXE_EFI_FILE='$IPXE_EFI_FILE' is missing or unreadable!" >&2
+    exit 1
+  fi
+  echo "Injecting iPXE EFI ($IPXE_EFI_FILE) into CBFS as efi/ipxe.efi (LZMA)..."
+  ./build/cbfstool build/coreboot.rom add -f "$IPXE_EFI_FILE" -n efi/ipxe.efi -t raw -c lzma
+  if ! ./build/cbfstool build/coreboot.rom print | grep -q 'efi/ipxe.efi'; then
+    echo "ERROR: Failed to verify efi/ipxe.efi in CBFS!" >&2
+    exit 1
+  fi
 fi
 
 echo "[6/6] Extracting BIOS region, validating layout, and assembling full ROM (if IFD/ME supplied)"

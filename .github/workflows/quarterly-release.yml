@@ -39,7 +39,7 @@ jobs:
       coreboot_ref: ${{ steps.meta.outputs.coreboot_ref }}
     steps:
       - name: Checkout board repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Determine target Coreboot release tag
         id: meta
@@ -84,9 +84,11 @@ jobs:
           cp -f patches/0001-sandybridge-h61m-s1-plus-igd-raminit.patch release-out/
           cp -f patches/0002-edk2-delete-key-usb-boot-menu.patch release-out/
           cp -f patches/0003-edk2-cf9-reset-and-secureboot-components.patch release-out/
+          cp -f patches/0004-edk2-cbfs-ipxe-support.patch release-out/
+          cp -f configs/asrock-h61m-s1-plus-sensors.conf release-out/
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: h61m-s1-plus-release-assets
           path: release-out/*
@@ -97,10 +99,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download release artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: h61m-s1-plus-release-assets
           path: release-out
@@ -116,26 +118,32 @@ jobs:
             exit 0
           fi
           python3 - <<'PY' > release-notes.md
-          import os
+          import os, textwrap
           tag = os.environ["REL_TAG"]
           ref = os.environ["CB_REF"]
-          print(f"""## ASRock H61M-S1 PLUS — Coreboot + EDK2 Release (`{tag}`)
+          print(textwrap.dedent(f"""\
+          ## ASRock H61M-S1 PLUS — Coreboot + EDK2 + iPXE Release (`{tag}`)
 
-          Automated quarterly Coreboot + EDK2 `UefiPayloadPkg` build tracking upstream Coreboot `{ref}`.
+          Automated Coreboot + EDK2 `UefiPayloadPkg` + **iPXE Network Boot** build tracking upstream Coreboot `{ref}`.
 
-          ### Ready-to-Flash Full SPI ROM Images (Include Unlocked IFD, ME & Desktop VBT)
-          - `h61m-s1-plus-coreboot-{tag}-w25q64-8mb-minimal-me-full.rom` (**8 MiB `W25Q64`, Recommended for External SPI**: `124 KiB` relocated `me_cleaner -S -r -t -d` ME + `AltMeDisable=1` + `7.875 MiB` BIOS)
-          - `h61m-s1-plus-coreboot-{tag}-w25q64-8mb-mecleaned-compat-full.rom` (**8 MiB `W25Q64`, Internal `flashrom --ifd -i bios` Compatible**: `1532 KiB` `me_cleaner -S -d` ME + `6.5 MiB` BIOS at `0x180000`)
-          - `h61m-s1-plus-coreboot-{tag}-w25q32-4mb-minimal-me-full.rom` (**4 MiB `W25Q32`, Minimal ME**: `124 KiB` relocated `me_cleaner -S -r -t -d` ME + `AltMeDisable=1` + `3.875 MiB` BIOS)
-          - `h61m-s1-plus-coreboot-{tag}-w25q32-4mb-stock-me-full.rom` (**4 MiB `W25Q32`, Stock ME**: Stock ME `8.1.20.1336` + `2.5 MiB` LZMA BIOS at `0x180000`)
+          ### Ready-to-Flash Full SPI ROM Images (4 MiB `W25Q32` & 8 MiB `W25Q64`, With & Without/Minimal ME)
+          - `h61m-s1-plus-coreboot-{tag}-w25q64-8mb-minimal-me-full.rom` (**8 MiB `W25Q64`, Minimal/Disabled ME — Recommended for External SPI**: `124 KiB` relocated `me_cleaner -S -r -t -d` ME + `AltMeDisable=1` + `7.875 MiB` BIOS + full `ipxe.efi`)
+          - `h61m-s1-plus-coreboot-{tag}-w25q64-8mb-mecleaned-compat-full.rom` (**8 MiB `W25Q64`, With ME — Internal `flashrom --ifd -i bios` Compatible**: `1532 KiB` `me_cleaner -S -d` ME + `6.5 MiB` BIOS at `0x180000` + full `ipxe.efi`)
+          - `h61m-s1-plus-coreboot-{tag}-w25q32-4mb-minimal-me-full.rom` (**4 MiB `W25Q32`, Minimal/Disabled ME**: `124 KiB` relocated `me_cleaner -S -r -t -d` ME + `AltMeDisable=1` + `3.875 MiB` BIOS + full `ipxe.efi`)
+          - `h61m-s1-plus-coreboot-{tag}-w25q32-4mb-stock-me-full.rom` (**4 MiB `W25Q32`, With Stock ME**: Stock ME `8.1.20.1336` + `2.5 MiB` LZMA BIOS at `0x180000` + targeted `realtek--intel--intelx--snp` `ipxe.efi`)
+
+          ### Highlights & iPXE Integration
+          - **Built-in iPXE UEFI Network Boot (`efi/ipxe.efi`)**: Loaded from CBFS via EDK2 `CbfsPayloadAssetsDxe` (`patches/0004-edk2-cbfs-ipxe-support.patch`) and registered as **`iPXE Network Boot`** in UEFI Boot Manager (`HTTPS`, `HTTP`, `TFTP`, `iSCSI`, `imgverify`/`imgtrust`, `ping`, `nslookup`, `ntp`, `cert`; `CONSOLE_EFI` without duplicate `CONSOLE_SERIAL` output). Full driver build on `8 MiB` + `4 MiB` minimal-ME ROMs; targeted `realtek--intel--intelx--snp.efi` (Realtek `RTL8111/8168` + Intel `I226-V`/Intel NICs + UEFI SNP) on `4 MiB` stock-ME.
+          - **Delete-Key USB Boot Menu, GRUB `fwsetup` CF9 Reset, Secure Boot & NVMe DXE, `NCT6776F` `PECI0` SmartFan IV & `lm-sensors`**.
 
           ### Included Supporting Assets
           - Per-variant BIOS-region slices (`*-bios-region.bin`), `cbfs-layout-*.txt`, `*.defconfig`
-          - `0001-sandybridge-h61m-s1-plus-igd-raminit.patch`, `0002-edk2-delete-key-usb-boot-menu.patch`, & `0003-edk2-cf9-reset-and-secureboot-components.patch`
+          - `0001-sandybridge-h61m-s1-plus-igd-raminit.patch`, `0002-edk2-delete-key-usb-boot-menu.patch`, `0003-edk2-cf9-reset-and-secureboot-components.patch`, & `0004-edk2-cbfs-ipxe-support.patch`
+          - `asrock-h61m-s1-plus-sensors.conf`
           - `SHA256SUMS.txt`
 
-          See [`BLOBS.md`](BLOBS.md) and [`README.md`](README.md) for flashing instructions, hardware test logs, and disclaimers.""")
+          See [`BLOBS.md`](BLOBS.md) and [`README.md`](README.md) for flashing instructions, hardware test logs, and disclaimers."""))
           PY
           gh release create "$REL_TAG" release-out/* \
-            --title "ASRock H61M-S1 PLUS Coreboot ${REL_TAG} (upstream ${CB_REF})" \
+            --title "ASRock H61M-S1 PLUS Coreboot + EDK2 + iPXE ${REL_TAG} (upstream ${CB_REF})" \
             --notes-file release-notes.md

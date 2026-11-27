@@ -1,6 +1,6 @@
 # ASRock H61M-S1 PLUS — Coreboot + EDK2 UEFI Port
 
-![Release](https://img.shields.io/badge/Release-v26.11.5-2ea44f?style=flat-square)
+![Release](https://img.shields.io/badge/Release-v26.11.6-2ea44f?style=flat-square)
 ![Coreboot](https://img.shields.io/badge/Coreboot-df45ea2c49b4-0066cc?style=flat-square)
 ![Payload](https://img.shields.io/badge/Payload-EDK2%20UefiPayloadPkg-5c2d91?style=flat-square)
 ![Flash](https://img.shields.io/badge/SPI%20Flash-W25Q32%20(4M)%20%7C%20W25Q64%20(8M)-d97706?style=flat-square)
@@ -18,14 +18,18 @@
 [**OS Configurator (`h61_coreboot_config.py`)**](scripts/h61_coreboot_config.py) ·
 [**Agent Skills**](.agents/skills/)
 
-Open-source **Coreboot + EDK2 `UefiPayloadPkg`** board port, Sandy/Ivy Bridge chipset patches, **`Delete`-key USB Boot Menu** ([`patches/0002-edk2-delete-key-usb-boot-menu.patch`](patches/0002-edk2-delete-key-usb-boot-menu.patch)), **GRUB `fwsetup` CF9 auto-reset fix & full Secure Boot + NVMe DXE support** ([`patches/0003-edk2-cf9-reset-and-secureboot-components.patch`](patches/0003-edk2-cf9-reset-and-secureboot-components.patch)), calibrated **`NCT6776F` HWM / `PECI0` SmartFan IV + `lm-sensors` board profile** ([`configs/asrock-h61m-s1-plus-sensors.conf`](configs/asrock-h61m-s1-plus-sensors.conf)), Linux OS runtime TUI/CLI configurator ([`scripts/h61_coreboot_config.py`](scripts/h61_coreboot_config.py)), ready-to-flash **4 MiB (`W25Q32`) & 8 MiB (`W25Q64`)** ROMs with committed IFD/ME/VBT blobs ([`blobs/`](blobs/)), comprehensive documentation, AI agent skills ([`.agents/skills/`](.agents/skills/)), and automated CI release pipeline ([`quarterly-release.yml`](.github/workflows/quarterly-release.yml)) for the **ASRock H61M-S1 PLUS** motherboard (`H61M-VS4 G/A 1.00`, LGA1155, Intel H61 Express `8086:1c5c`, Nuvoton `NCT6776F/D` Super I/O, Realtek `ALC662`, Realtek `RTL8111`, `W25Q32` / `W25Q64` SPI flash).
+Open-source **Coreboot + EDK2 `UefiPayloadPkg`** board port, Sandy/Ivy Bridge chipset patches, **iPXE UEFI Network Boot** ([`patches/0004-edk2-cbfs-ipxe-support.patch`](patches/0004-edk2-cbfs-ipxe-support.patch) + [`scripts/build_ipxe.sh`](scripts/build_ipxe.sh)), **`Delete`-key USB Boot Menu** ([`patches/0002-edk2-delete-key-usb-boot-menu.patch`](patches/0002-edk2-delete-key-usb-boot-menu.patch)), **GRUB `fwsetup` CF9 auto-reset fix & full Secure Boot + NVMe DXE support** ([`patches/0003-edk2-cf9-reset-and-secureboot-components.patch`](patches/0003-edk2-cf9-reset-and-secureboot-components.patch)), calibrated **`NCT6776F` HWM / `PECI0` SmartFan IV + `lm-sensors` board profile** ([`configs/asrock-h61m-s1-plus-sensors.conf`](configs/asrock-h61m-s1-plus-sensors.conf)), Linux OS runtime TUI/CLI configurator ([`scripts/h61_coreboot_config.py`](scripts/h61_coreboot_config.py)), ready-to-flash **4 MiB (`W25Q32`) & 8 MiB (`W25Q64`)** ROMs with committed IFD/ME/VBT blobs ([`blobs/`](blobs/)), comprehensive documentation, AI agent skills ([`.agents/skills/`](.agents/skills/)), and automated CI release pipeline ([`quarterly-release.yml`](.github/workflows/quarterly-release.yml)) for the **ASRock H61M-S1 PLUS** motherboard (`H61M-VS4 G/A 1.00`, LGA1155, Intel H61 Express `8086:1c5c`, Nuvoton `NCT6776F/D` Super I/O, Realtek `ALC662`, Realtek `RTL8111`, `W25Q32` / `W25Q64` SPI flash).
 
-### Highlights New in `v26.11.5`
+### Highlights New in `v26.11.6`
+- **Built-in iPXE UEFI Network Boot (`efi/ipxe.efi` via `CbfsPayloadAssetsDxe`)**: Un-gated EDK2 `CbfsPayloadAssetsDxe` ([`patches/0004-edk2-cbfs-ipxe-support.patch`](patches/0004-edk2-cbfs-ipxe-support.patch)) loads LZMA-compressed `efi/ipxe.efi` from CBFS when `BOOTSPLASH_IMAGE=FALSE` and automatically registers **`iPXE Network Boot`** in UEFI Boot Manager (`ESC` -> Boot Manager / `efibootmgr`) without adding unused EDK2 `NetworkPkg` bloat. Built from pinned iPXE commit `7c39c04a537c` ([`scripts/build_ipxe.sh`](scripts/build_ipxe.sh)) with `DOWNLOAD_PROTO_HTTPS`, `IMAGE_TRUST_CMD`, `PING_CMD`, `NSLOOKUP_CMD`, `REBOOT_CMD`, `POWEROFF_CMD`, `NTP_CMD`, `CERT_CMD`, and `CONSOLE_EFI` only (preventing COM1 double-echo with EDK2 `TerminalDxe`).
+  - **8 MiB (`W25Q64`) & 4 MiB (`W25Q32`) Minimal-ME ROMs**: Include full `bin-x86_64-efi-sb/ipxe.efi` (`360,111` B LZMA / `773,120` B decompressed; all PCI, USB, & VirtIO NIC drivers).
+  - **4 MiB (`W25Q32`) Stock-ME ROM**: Includes targeted `realtek--intel--intelx--snp.efi` (`143,887` B LZMA / `290,816` B decompressed; onboard Realtek `RTL8111/8168`, Intel `I226-V`/Intel NICs, `intelx`, & UEFI `snp` fallback) leaving `53,924` B free in CBFS.
+- **GitHub Actions & Build Hardening**: Upgraded `.github/workflows/quarterly-release.yml` actions to Node 24-native majors (`checkout@v6`, `upload-artifact@v6`, `download-artifact@v7`, eliminating Node 20 deprecation warnings), included `0004` + `asrock-h61m-s1-plus-sensors.conf` in release assets, and made `scripts/build.sh` fail hard if `0001` fails to apply cleanly.
+
+### Carried Forward & Live-Verified (`v26.11.5` / `v26.11.4` / `v26.11.3`)
 - **Accurate `NCT6776F` CPU `PECI Agent 0` & Closed-Loop SmartFan IV (`0x0c` vs `0x10`)**: Coreboot's generic `NUVOTON_FAN_SOURCE_PECI0` (`0x10`, meant for NCT6791D/NCT6796D) mapped to `PCH_CPU_TEMP` (`0.0°C` on H61M-S1 PLUS where pins 75/76 `MSCL/MSDA` are unwired). Setting NCT6776F-native **`NCT6776_TEMP_SRC_PECI0 = 0x0c`** (`mainboard.c`) enables real CPU die tracking on both SmartFan IV banks (`CHA_FAN1` `1920 -> 3040 RPM` under 15s load, stepping back to `1909 RPM` on cooldown as `PECI Agent 0` tracks `34.5 -> 60.0 -> 33.5°C` alongside `coretemp`).
 - **Eliminated `CPUTIN = 123.5°C` & Duplicate `AUXTIN` + Cleared Bogus Boot Alarms**: `U1007` Pin 110 (`CPUTIN`) is physically unconnected on the PCB and Pins 109/111 are shorted on `MB_TEMP`. Routing `SMIOVT1 -> SYSTIN (0x01)` and `SMIOVT2 -> PECI Agent 0 (0x0c)` in Bank 6, disabling `CPUTIN` open-diode current mode (`0x5d`/`0x5e`), switching `SYSFANOUT` to PWM mode (`pwm1_mode=1`), and programming sane hardware voltage/temperature limits (`Bank 0`/`1`/`2`/`5`) removes `CPUTIN=123.5°C` and zeroes every operational HWM threshold alarm at boot.
 - **Board-Calibrated `lm-sensors` & Updated `h61-coreboot-config`**: Added [`configs/asrock-h61m-s1-plus-sensors.conf`](configs/asrock-h61m-s1-plus-sensors.conf) (boardview + stock BIOS `PE2` divider formulas for `Vcore`, `+12V` `6.6x`, `+5V` `3.0x`, `AVCC`, `+3.3V`, `3VSB`, `Vbat`; ignoring unwired `PCH_*`, `SIO_IMON` `in4`, `MB_TEMP` `in6`, and unjumpered `CI1` intrusion) and updated [`scripts/h61_coreboot_config.py`](scripts/h61_coreboot_config.py) to read `in0..in8`, scaled voltages, `CHA_FAN1`/`CPU_FAN1`, operational alarms, and `Tesla P4` GPU telemetry.
-
-### Carried Forward & Live-Verified (`v26.11.4` / `v26.11.3`)
 - **GRUB `fwsetup` CF9 Auto-Reset (`0003`) & `Delete`-Key USB Boot Menu (`0002`)**: Live-verified via `COM5` + Ubuntu Server USB -> `Delete` `Select USB Boot Device:` -> `UEFI Firmware Settings` -> automatic cold reset (`0xcf9 0x02 -> 0x06`) straight into `UiApp`.
 - **Complete Secure Boot DXE Stack + `NVME_ENABLE=TRUE`**: `Pkcs7VerifyDxe`, `RngDxe`, `Hash2DxeCrypto`, `EnrollDefaultKeys`, `SecureBootConfigDxe`, and `NvmExpressDxe` enabled in all 4 variants (Microsoft 2011+2023 keys pre-enrolled, disabled by default so unsigned drivers like `nvidia.ko` load cleanly).
 - **`LPT1` (`0x378` IRQ 5 `PNP0400`), `COM1` (`0x3f8`), `LPC/TPM1` Port `0x80` + TPM Probe, & 10 OS-Writable CFR Options**.
@@ -37,7 +41,7 @@ Open-source **Coreboot + EDK2 `UefiPayloadPkg`** board port, Sandy/Ivy Bridge ch
 1. [Disclaimers & Known Caveats](#1-disclaimers--known-caveats)
 2. [Documentation Index](#2-documentation-index)
 3. [Software-to-Hardware Connection Map](#3-software-to-hardware-connection-map)
-4. [Ready-to-Flash ROM Variants (`v26.11.5`, Blobs Included)](#4-ready-to-flash-rom-variants-v26115-blobs-included)
+4. [Ready-to-Flash ROM Variants (`v26.11.6`, Blobs Included)](#4-ready-to-flash-rom-variants-v26116-blobs-included)
 5. [Verified Hardware Status (`v26.11.5`)](#5-verified-hardware-status-v26115)
 6. [Configuring Coreboot & Sensors from Linux](#6-configuring-coreboot--sensors-from-linux)
 7. [Building & Flashing Guide](#7-building--flashing-guide)
@@ -115,16 +119,16 @@ flowchart TB
 
 ---
 
-## 4. Ready-to-Flash ROM Variants (`v26.11.5`, Blobs Included)
+## 4. Ready-to-Flash ROM Variants (`v26.11.6`, Blobs Included)
 
-All 4 full ROM images are published under [**Releases (`v26.11.5`)**](../../releases/tag/v26.11.5), built from reproducible defconfigs in [`configs/`](configs/) with [`blobs/`](blobs/) (`IFD` with `FLMSTR1=0xffff0000`, `ME`, and desktop `data.vbt`), and verified with `ifdtool -d`, `me_cleaner.py -c` (`FTPR` RSA VALID), and `cbfstool`:
+All 4 full ROM images (each bundling **`efi/ipxe.efi`** for UEFI Network Boot) are published under [**Releases (`v26.11.6`)**](../../releases/tag/v26.11.6), built from reproducible defconfigs in [`configs/`](configs/) with [`blobs/`](blobs/) (`IFD` with `FLMSTR1=0xffff0000`, `ME`, and desktop `data.vbt`), and verified with `ifdtool -d`, `me_cleaner.py -c` (`FTPR` RSA VALID), and `cbfstool`:
 
-| Release Artifact (`*-full.rom`) | Flash Chip | Intel ME (`0x001000+`) | `AltMeDisable` | BIOS Offset / Size | CBFS Free Space | SHA-256 | Flash Notes |
-|---|---|---|---:|---|---:|---|---|
-| **`h61m-s1-plus-coreboot-v26.11.5-w25q64-8mb-minimal-me-full.rom`** | `W25Q64` (`8 MiB`) | `124 KiB` (`me_cleaner -S -r -t -d`) | **Yes (`1`)** | `0x020000` (`7.875 MiB`) | `5,850,340` B | `5f949411157872ad70c397d9189a4afa17e065faf213fae36e6d87924226d3f9` | **Recommended (`8 MiB`)**: Flash once externally on `U3` (permanently unlocks IFD for future internal updates!) |
-| **`h61m-s1-plus-coreboot-v26.11.5-w25q64-8mb-mecleaned-compat-full.rom`** | `W25Q64` (`8 MiB`) | `1532 KiB` (`me_cleaner -S -d`) | Yes (`1`, IFD) | `0x180000` (`6.5 MiB`) | `4,408,548` B | `48745677fae8c8f3fb75c884f9ea56fae745747a5c9248e9ff045917c45bf976` | **Live Hardware-Verified (`8 MiB`)**: Compatible with `flashrom -p internal --ifd -i bios` on locked stock IFD |
-| **`h61m-s1-plus-coreboot-v26.11.5-w25q32-4mb-minimal-me-full.rom`** | `W25Q32` (`4 MiB`) | `124 KiB` (`me_cleaner -S -r -t -d`) | **Yes (`1`)** | `0x020000` (`3.875 MiB`) | `1,655,972` B | `59c861d17d3b33b904db029b35f323f9edd9c16a9a0f3f8991da496a08b7f402` | **Recommended (`4 MiB`)**: Flash once externally on `U3` to reclaim `3.875 MiB` BIOS + minimal ME |
-| **`h61m-s1-plus-coreboot-v26.11.5-w25q32-4mb-stock-me-full.rom`** | `W25Q32` (`4 MiB`) | Stock `8.1.20.1336` (`1532 KiB`) | No (`0`) | `0x180000` (`2.5 MiB`) | `214,180` B | `8e99f4e2481dc61ff4b75f9b055e42ef337d50c47db9b401e345f5dd9f5f228e` | Internal `flashrom --ifd -i bios` compatible on stock `4 MiB` `W25Q32` |
+| Release Artifact (`*-full.rom`) | Flash Chip | Intel ME (`0x001000+`) | `AltMeDisable` | iPXE (`efi/ipxe.efi`) | BIOS Offset / Size | CBFS Free Space | SHA-256 | Flash Notes |
+|---|---|---|---:|---|---|---:|---|---|
+| **`h61m-s1-plus-coreboot-v26.11.6-w25q64-8mb-minimal-me-full.rom`** | `W25Q64` (`8 MiB`) | `124 KiB` (`me_cleaner -S -r -t -d`) | **Yes (`1`)** | Full (`360,111` B LZMA) | `0x020000` (`7.875 MiB`) | `5,473,892` B | `36083329cf60517a26fcd625495852faf0f236d37aac921047ca602862957a6f` | **Recommended (`8 MiB`, Minimal/Disabled ME)**: Flash once externally on `U3` (permanently unlocks IFD for future internal updates!) |
+| **`h61m-s1-plus-coreboot-v26.11.6-w25q64-8mb-mecleaned-compat-full.rom`** | `W25Q64` (`8 MiB`) | `1532 KiB` (`me_cleaner -S -d`) | Yes (`1`, IFD) | Full (`360,111` B LZMA) | `0x180000` (`6.5 MiB`) | `4,032,100` B | `2dba64227a4f7d8822085777db65e5dc39a20fb9da368831cabfcf2f12cbcc42` | **With ME (`8 MiB`, Internal Compatible)**: Compatible with `flashrom -p internal --ifd -i bios` on locked stock IFD |
+| **`h61m-s1-plus-coreboot-v26.11.6-w25q32-4mb-minimal-me-full.rom`** | `W25Q32` (`4 MiB`) | `124 KiB` (`me_cleaner -S -r -t -d`) | **Yes (`1`)** | Full (`360,111` B LZMA) | `0x020000` (`3.875 MiB`) | `1,279,524` B | `de1cfaebf996c78f176980356272410763ded97d100fdec6a2619f9de9267a3f` | **Recommended (`4 MiB`, Minimal/Disabled ME)**: Flash once externally on `U3` to reclaim `3.875 MiB` BIOS + minimal ME |
+| **`h61m-s1-plus-coreboot-v26.11.6-w25q32-4mb-stock-me-full.rom`** | `W25Q32` (`4 MiB`) | Stock `8.1.20.1336` (`1532 KiB`) | No (`0`) | Slim `realtek--intel--intelx--snp` (`143,887` B LZMA) | `0x180000` (`2.5 MiB`) | `53,924` B | `5730e1703b49627effcdc4e2ea735eddd86ba998aa4a677a59cbb120cc32ef95` | **With Stock ME (`4 MiB`, Internal Compatible)**: `flashrom --ifd -i bios` compatible on stock `4 MiB` `W25Q32` |
 
 ---
 
@@ -174,12 +178,12 @@ sudo h61-coreboot-config flash <full.rom>  # Safe internal 4M/8M '--ifd -i bios'
 ## 7. Building & Flashing Guide
 
 ### Option 1: Flash Pre-Built Public Release ROMs (`blobs/` Included)
-Download your target variant from [**Releases (`v26.11.5`)**](../../releases/tag/v26.11.5) and verify `SHA256SUMS.txt`:
-- **External SPI Programmer (Recommended once on socketed `U3`)**: Flash `h61m-s1-plus-coreboot-v26.11.5-w25q64-8mb-minimal-me-full.rom` (`W25Q64`) or `...-w25q32-4mb-minimal-me-full.rom` (`W25Q32`). Unlocks `FLMSTR1=0xffff0000` for future internal updates and activates `124 KiB` minimal ME + `AltMeDisable=1`.
+Download your target variant from [**Releases (`v26.11.6`)**](../../releases/tag/v26.11.6) and verify `SHA256SUMS.txt`:
+- **External SPI Programmer (Recommended once on socketed `U3`)**: Flash `h61m-s1-plus-coreboot-v26.11.6-w25q64-8mb-minimal-me-full.rom` (`W25Q64`) or `...-w25q32-4mb-minimal-me-full.rom` (`W25Q32`). Unlocks `FLMSTR1=0xffff0000` for future internal updates and activates `124 KiB` minimal ME + `AltMeDisable=1`.
 - **Internal `flashrom` from Linux (`FREG2` still vendor-locked)**:
   ```bash
   sudo flashrom -p internal -c "W25Q64BV/W25Q64CV/W25Q64FV" --ifd -i bios --noverify-all \
-    -w h61m-s1-plus-coreboot-v26.11.5-w25q64-8mb-mecleaned-compat-full.rom
+    -w h61m-s1-plus-coreboot-v26.11.6-w25q64-8mb-mecleaned-compat-full.rom
   ```
 
 ### Option 2: Build All 4 Variants From Source
@@ -189,7 +193,7 @@ Inside `coreboot/coreboot-sdk:latest` (or Ada-enabled Coreboot toolchain with `g
 git clone https://github.com/coreboot/coreboot.git
 cd coreboot && git checkout df45ea2c49b4c7f6a1d2a969934cf6c6a2cb9018
 cd ..
-COREBOOT_DIR="$PWD/coreboot" RELEASE_TAG="v26.11.5" bash scripts/build_all_roms.sh
+COREBOOT_DIR="$PWD/coreboot" RELEASE_TAG="v26.11.6" bash scripts/build_all_roms.sh
 ```
 
 *(Or assemble custom stock dumps using [`scripts/assemble_full_rom.sh`](scripts/assemble_full_rom.sh) with `--stock-dump`, `--bios-region`, `--bios-offset`, `--rom-size`, `--vbt`, `--me-cleaner`.)*
@@ -210,9 +214,11 @@ COREBOOT_DIR="$PWD/coreboot" RELEASE_TAG="v26.11.5" bash scripts/build_all_roms.
 ├── patches/
 │   ├── 0001-sandybridge-h61m-s1-plus-igd-raminit.patch          # <4G clamp, NRI/PEG, me_state CFR runtime flag
 │   ├── 0002-edk2-delete-key-usb-boot-menu.patch                 # EDK2 Del USB Boot Menu, PcAnsi ESC[3~ fix, BDS Port 0x80
-│   └── 0003-edk2-cf9-reset-and-secureboot-components.patch     # CF9 0x02/0x06 fwsetup reset fix & Pkcs7Verify/Rng/Hash2 DXE
+│   ├── 0003-edk2-cf9-reset-and-secureboot-components.patch     # CF9 0x02/0x06 fwsetup reset fix & Pkcs7Verify/Rng/Hash2 DXE
+│   └── 0004-edk2-cbfs-ipxe-support.patch                       # Un-gate CbfsPayloadAssetsDxe for CBFS efi/ipxe.efi loading
 ├── scripts/
 │   ├── build_all_roms.sh                   # Builds & validates all 4 W25Q32/W25Q64 full ROMs + SHA256SUMS.txt
+│   ├── build_ipxe.sh                       # Builds pinned iPXE UEFI binaries (ipxe-full.efi & ipxe-h61-slim.efi)
 │   ├── build.sh                            # Single-variant Coreboot + EDK2 builder & ifdtool/me_cleaner validator
 │   ├── assemble_full_rom.sh                # Stitches 4M/8M IFD + ME + BIOS region (+ optional VBT & me_cleaner)
 │   ├── h61_coreboot_config.py              # Linux OS runtime 10-option CFR TUI & CLI configurator
